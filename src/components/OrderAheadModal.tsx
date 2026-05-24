@@ -2,6 +2,11 @@
 // OrderAheadModal.tsx
 // Full-screen bottom-sheet order modal. Features:
 // · inputMode="email" / "tel" for perfect mobile keyboards
+// · visualViewport listener: modal shrinks when iOS keyboard appears
+//   so the submit button is NEVER buried under the keyboard
+// · Returning-user fast path: pre-fills name/email/phone from
+//   the most recent localStorage lead (mds_leads)
+// · On-blur email validation (less friction than on-keypress)
 // · Idempotent double-submit guard (disabled + spinner after tap)
 // · Cart quantity stepper with haptic-style press animation
 // · Satisfying checkmark success screen with confetti burst
@@ -20,6 +25,20 @@ function fmtCurrency(amount: number, currency: 'USD' | 'MXN' | 'CAD'): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency', currency, minimumFractionDigits: 0,
   }).format(amount);
+}
+
+/** Read most-recent lead from localStorage for returning-user pre-fill */
+function getLastLead(): { name: string; email: string; phone: string } | null {
+  try {
+    const raw = localStorage.getItem('mds_leads');
+    if (!raw) return null;
+    const leads: Lead[] = JSON.parse(raw);
+    if (!leads.length) return null;
+    const last = leads[leads.length - 1];
+    return { name: last.name ?? '', email: last.email ?? '', phone: last.phone ?? '' };
+  } catch {
+    return null;
+  }
 }
 
 // ─── Confetti burst (pure CSS, no deps) ──────────────────────
@@ -324,21 +343,70 @@ interface Props {
   onSubmit: (lead: Omit<Lead, 'id' | 'createdAt' | 'status'>) => void;
 }
 
+// ─── iOS keyboard-aware height hook ──────────────────────────
+//
+// On iPhone, when the virtual keyboard slides up, window.innerHeight
+// stays the same but visualViewport.height shrinks. We compute the
+// visible gap and subtract it from the modal's max-height so the
+// sheet shrinks and the submit button stays visible.
+//
+function useKeyboardHeight(): number {
+  const [kbHeight, setKbHeight] = useState(0);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    function update() {
+      if (!vv) return;
+      // How many px the keyboard is consuming
+      const gap = window.innerHeight - vv.height - vv.offsetTop;
+      setKbHeight(Math.max(0, gap));
+    }
+
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
+
+  return kbHeight;
+}
+
 // ─── Main modal ───────────────────────────────────────────────
 
 export function OrderAheadModal({ pub, match, onClose, onSubmit }: Props) {
   const menu = MENU_BY_CURRENCY[pub.currency];
+
+  // Pre-fill from last lead (returning users)
+  const lastLead = useRef(getLastLead());
+  const isReturning = !!lastLead.current?.email;
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [form, setForm] = useState<FormState>({
-    name: '', email: '', phone: '', partySize: 2, specialRequests: '',
+    name:            lastLead.current?.name  ?? '',
+    email:           lastLead.current?.email ?? '',
+    phone:           lastLead.current?.phone ?? '',
+    partySize:       2,
+    specialRequests: '',
   });
-  const [errors, setErrors] = useState<FormErrors>({});
+  const [errors, setErrors]       = useState<FormErrors>({});
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted]   = useState(false);
   const submitRef = useRef(false); // extra guard against double-submit
 
   const cartTotal = cart.reduce((s, ci) => s + ci.menuItem.price * ci.quantity, 0);
   const cartCount = cart.reduce((s, ci) => s + ci.quantity, 0);
+
+  // iOS keyboard-aware modal height
+  const kbHeight = useKeyboardHeight();
+  // Base: 92dvh. When keyboard appears, shrink by the keyboard height.
+  // min() keeps us from going below ~40vh.
+  const modalMaxHeight = kbHeight > 0
+    ? `max(40vh, calc(92dvh - ${kbHeight}px))`
+    : '92dvh';
 
   // Lock body scroll while modal is open
   useLayoutEffect(() => {
@@ -379,6 +447,15 @@ export function OrderAheadModal({ pub, match, onClose, onSubmit }: Props) {
       errs.phone = 'Enter a valid phone number';
     setErrors(errs);
     return Object.keys(errs).length === 0;
+  }
+
+  /** Validate just the email field on blur — less friction than per-keypress */
+  function validateEmailOnBlur() {
+    if (!form.email.trim()) return; // don't nag empty field on blur
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
+      setErrors((prev) => ({ ...prev, email: 'Enter a valid email address' }));
+    else
+      setErrors((prev) => ({ ...prev, email: undefined }));
   }
 
   // ── Submit (idempotent) ──────────────────────────────────
@@ -430,7 +507,17 @@ export function OrderAheadModal({ pub, match, onClose, onSubmit }: Props) {
 
   return (
     <ModalBackdrop onClose={onClose}>
-      <div className="flex flex-col" style={{ maxHeight: '92dvh' }}>
+      {/*
+       * maxHeight transitions smoothly when the keyboard appears/disappears.
+       * transition-all with a short duration matches the iOS keyboard animation.
+       */}
+      <div
+        className="flex flex-col"
+        style={{
+          maxHeight: modalMaxHeight,
+          transition: 'max-height 0.2s ease',
+        }}
+      >
         {/* Handle bar */}
         <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
           <div className="w-10 h-1 rounded-full bg-zinc-700" />
@@ -456,6 +543,16 @@ export function OrderAheadModal({ pub, match, onClose, onSubmit }: Props) {
             ✕
           </button>
         </div>
+
+        {/* Returning-user fast-path banner */}
+        {isReturning && (
+          <div className="flex-shrink-0 mx-5 mt-3 flex items-center gap-2 bg-emerald-500/8 border border-emerald-500/20 rounded-xl px-3 py-2">
+            <span className="text-emerald-400 text-sm">👋</span>
+            <p className="text-emerald-300/70 text-xs leading-tight">
+              Welcome back! We pre-filled your details.
+            </p>
+          </div>
+        )}
 
         {/* Scrollable body */}
         <div
@@ -531,6 +628,7 @@ export function OrderAheadModal({ pub, match, onClose, onSubmit }: Props) {
                 placeholder="alex@email.com"
                 value={form.email}
                 onChange={(e) => { setForm((f) => ({ ...f, email: e.target.value })); setErrors((x) => ({ ...x, email: undefined })); }}
+                onBlur={validateEmailOnBlur}
                 className={inputCls(!!errors.email)}
               />
             </Field>
