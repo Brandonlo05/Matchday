@@ -1,0 +1,188 @@
+/* ============================================================
+   Universal MatchDay Shovel — Global Styles
+   Tailwind directives + PWA mobile-specific resets + utilities
+   ============================================================ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base resets for PWA mobile feel ────────────────────────── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    /* Kill iOS blue tap flash on every interactive element */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    background-color: #09090b;
+    color-scheme: dark;
+    /* Prevent font scaling on orientation change */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* True dynamic viewport height */
+    height: 100dvh;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    height: 100dvh;
+    overflow: hidden;
+    /* Kill iOS rubber-banding at the body level */
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+    /* Smooth native scroll */
+    scroll-behavior: smooth;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: rgb(244 244 245); /* zinc-100 */
+    background-color: #09090b;
+  }
+
+  #root {
+    height: 100dvh;
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  /* Remove default button/input chrome */
+  button {
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+  }
+
+  input,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Remove autofill yellow flash on dark themes */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px #27272a inset !important;
+    -webkit-text-fill-color: rgb(244 244 245) !important;
+    caret-color: rgb(244 244 245);
+  }
+}
+
+/* ── Custom utility classes ──────────────────────────────────── */
+@layer utilities {
+  /* Hide scrollbars on all browsers while keeping scroll functional */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* iOS safe-area helpers */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 16px);
+  }
+  .pl-safe {
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+  .pr-safe {
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  /* Combined for bottom sheets and modals */
+  .pb-safe-modal {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
+  }
+
+  /* 100dvh — dynamic viewport height (accounts for mobile browser chrome) */
+  .h-dvh {
+    height: 100dvh;
+  }
+  .min-h-dvh {
+    min-height: 100dvh;
+  }
+
+  /* Prevent double-tap zoom on interactive elements without disabling pinch-zoom */
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
+
+  /* Tabular numbers for countdown digits */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /* Smooth active press scale for mobile buttons */
+  .press-scale {
+    transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .press-scale:active {
+    transform: scale(0.95);
+  }
+}
+
+/* ── Custom keyframe animations ─────────────────────────────── */
+@layer utilities {
+  @keyframes confettiFly {
+    from {
+      opacity: 1;
+      transform: translate(0, 0) rotate(0deg);
+    }
+    to {
+      opacity: 0;
+      transform: translate(var(--tx, 0), var(--ty, -100px)) rotate(var(--rot, 360deg));
+    }
+  }
+
+  @keyframes modalSlideUp {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+
+  @keyframes popIn {
+    from { transform: scale(0.4); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+  }
+
+  @keyframes drawCheck {
+    from { stroke-dashoffset: 50; }
+    to   { stroke-dashoffset: 0;  }
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0);    }
+  }
+
+  @keyframes ribbonGlow {
+    from { opacity: 0.1; }
+    to   { opacity: 0.35; }
+  }
+
+  @keyframes footerBloom {
+    from { opacity: 0.4; transform: scale(0.95); }
+    to   { opacity: 1;   transform: scale(1.02); }
+  }
+
+  @keyframes shakeIn {
+    0%, 100% { transform: translateX(0);  }
+    25%       { transform: translateX(-4px); }
+    75%       { transform: translateX(4px);  }
+  }
+
+  @keyframes digitFlip {
+    from { transform: rotateX(-15deg) scale(0.95); opacity: 0.3; }
+    to   { transform: rotateX(0deg)   scale(1);    opacity: 1;   }
+  }
+}
