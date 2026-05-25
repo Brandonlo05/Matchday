@@ -559,6 +559,19 @@ export function OrderAheadModal({ pub, match, onClose, onSubmit }: Props) {
           className="overflow-y-auto overscroll-contain flex-1 px-5 space-y-6 pb-4"
           style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', paddingTop: 20 }}
         >
+          {/* Pre-ordering info banner */}
+          <div className="bg-zinc-900 ring-1 ring-zinc-800 rounded-xl px-4 py-3">
+            <p className="text-xs font-black text-zinc-100 mb-1">
+              Mobile ordering opens 2 hours before kickoff
+            </p>
+            <p className="text-xs text-zinc-400 leading-snug">
+              We'll notify you the second ordering slots open at{' '}
+              <span className="text-zinc-200 font-semibold">{pub.name}</span> so you walk in,
+              food's ready, line skipped. Drop your email and we'll lock in a free drink
+              voucher for you.
+            </p>
+          </div>
+
           {/* Party size */}
           <div>
             <p className="text-[11px] font-black text-zinc-500 tracking-widest uppercase mb-3">

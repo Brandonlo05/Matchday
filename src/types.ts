@@ -1,5 +1,6 @@
 // ============================================================
 // Universal MatchDay Shovel — Core Type Definitions
+// Phase 1 types preserved. Phase 2 types appended.
 // ============================================================
 
 export type CityId = 'la' | 'cdmx' | 'toronto' | 'ny';
@@ -82,6 +83,7 @@ export interface Pub {
   depositAmount?: number;
   currency: Currency;
   imageGradient: string;        // Tailwind gradient class pair for card bg
+  vibe?: string;                // free-text vibe descriptor for age-tier filtering
 }
 
 // ─── MENU & CART ────────────────────────────────────────────
@@ -157,6 +159,28 @@ export interface GeoState {
   error?: string;
 }
 
+// ─── FREE ACTIVITIES ────────────────────────────────────────
+
+export type ActivityCategory =
+  | 'park'
+  | 'trail'
+  | 'landmark'
+  | 'event'
+  | 'market'
+  | 'viewpoint';
+
+export interface FreeActivity {
+  id: string;
+  name: string;
+  category: ActivityCategory;
+  distance: string;
+  description: string;
+  tip: string;
+  isFamilyFriendly: boolean;
+  minAge: number;
+  mapsQuery: string;
+}
+
 export interface CityData {
   id: CityId;
   name: string;
@@ -171,6 +195,7 @@ export interface CityData {
   matches: Match[];
   pubs: Pub[];
   stadiums: Stadium[];
+  freeActivities: FreeActivity[];
 }
 
 // ─── UI STATE ────────────────────────────────────────────────
@@ -195,4 +220,66 @@ export interface MatchdayEngineReturn {
   selectCity: (id: CityId) => void;
   requestGeo: () => void;
   saveLead: (lead: Omit<Lead, 'id' | 'createdAt' | 'status'>) => Lead;
+}
+
+// ─── PHASE 2 — AGE TIER ────────────────────────────────────
+
+export type AgeTier = 'family' | 'adult' | 'open';
+
+// ─── PHASE 2 — SWIPE PREFERENCES ──────────────────────────
+
+export interface SwipeRecord {
+  id: string;
+  direction: 'left' | 'right';
+  type: 'pub' | 'activity';
+  cityKey: CityId;
+  timestamp: string; // ISO 8601
+}
+
+// ─── PHASE 2 — FLASH ──────────────────────────────────────
+
+export interface FlashResult {
+  id: string;
+  name: string;
+  type: 'pub' | 'activity';
+  category: string;
+  distanceLabel: string;
+  contextReason: string;
+  primaryActionLabel: string;
+  /** For activities: Google Maps URL. For pubs: `pub://${pubId}` handled by App */
+  primaryActionUrl: string;
+  vibeOrDescription: string;
+}
+
+// ─── PHASE 2 — DAY PLANNER ────────────────────────────────
+
+export interface PlanSlot {
+  id: string;
+  timeLabel: string;
+  timeEmoji: string;
+  name: string;
+  type: 'pub' | 'activity';
+  description: string;
+  actionLabel: string;
+  actionUrl: string;
+  swappable: boolean;
+}
+
+export interface DayPlan {
+  cityName: string;
+  date: string;
+  slots: PlanSlot[];
+}
+
+// ─── PHASE 2 — HISTORICAL PINS ───────────────────────────
+
+export interface HistoricalPin {
+  id: string;
+  cityKey: CityId;
+  lat: number;
+  lng: number;
+  title: string;
+  body: string;
+  era: string;
+  minAge: number;
 }

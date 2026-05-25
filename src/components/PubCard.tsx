@@ -2,26 +2,39 @@
 // PubCard.tsx
 // Premium venue card with pulsing LIVE OPEN dot, filterable
 // feature tags, live geo distance, and deposit micro-detail.
+// Phase 2: age-tier badge logic — family tier suppresses the
+// green OPEN dot on bar/cocktail/nightlife pubs and shows a
+// static neutral VENUE badge instead.
 // ============================================================
 
+import { useAgeTierContext } from '../context/AgeTierContext';
 import type { Pub } from '../types';
 
 // ─── Feature meta map ────────────────────────────────────────
 
 export const FEATURE_META: Record<string, { label: string; emoji: string; filterTag: string }> = {
-  outdoor_patio:    { label: 'Beer Garden',     emoji: '🌿', filterTag: '#BeerGarden'   },
-  multiple_screens: { label: 'Big Screens',     emoji: '📺', filterTag: '#BigScreens'   },
-  private_booths:   { label: 'Private Booths',  emoji: '🎯', filterTag: '#PrivateBooths'},
-  standing_room:    { label: 'Standing Room',   emoji: '🧍', filterTag: '#StandingRoom' },
-  vip_section:      { label: 'VIP Section',     emoji: '⭐', filterTag: '#VIP'          },
-  full_kitchen:     { label: 'Full Menu',        emoji: '🍔', filterTag: '#FullMenu'    },
-  craft_beer:       { label: 'Craft Beer',      emoji: '🍺', filterTag: '#CraftBeer'    },
-  cocktail_bar:     { label: 'Cocktails',       emoji: '🍹', filterTag: '#Cocktails'    },
-  watch_party_host: { label: 'Hosted Events',   emoji: '🎙️', filterTag: '#Hosted'       },
-  fan_zone:         { label: 'Fan Zone',        emoji: '🏟️', filterTag: '#FanZone'      },
-  food_packages:    { label: 'Food Packages',   emoji: '📦', filterTag: '#FoodPkgs'     },
-  bottle_service:   { label: 'Bottle Service',  emoji: '🥂', filterTag: '#BottleSvc'    },
+  outdoor_patio:    { label: 'Beer Garden',    emoji: '🌿', filterTag: '#BeerGarden'    },
+  multiple_screens: { label: 'Big Screens',    emoji: '📺', filterTag: '#BigScreens'    },
+  private_booths:   { label: 'Private Booths', emoji: '🎯', filterTag: '#PrivateBooths' },
+  standing_room:    { label: 'Standing Room',  emoji: '🧍', filterTag: '#StandingRoom'  },
+  vip_section:      { label: 'VIP Section',    emoji: '⭐', filterTag: '#VIP'           },
+  full_kitchen:     { label: 'Full Menu',      emoji: '🍔', filterTag: '#FullMenu'      },
+  craft_beer:       { label: 'Craft Beer',     emoji: '🍺', filterTag: '#CraftBeer'     },
+  cocktail_bar:     { label: 'Cocktails',      emoji: '🍹', filterTag: '#Cocktails'     },
+  watch_party_host: { label: 'Hosted Events',  emoji: '🎙️', filterTag: '#Hosted'        },
+  fan_zone:         { label: 'Fan Zone',       emoji: '🏟️', filterTag: '#FanZone'       },
+  food_packages:    { label: 'Food Packages',  emoji: '📦', filterTag: '#FoodPkgs'      },
+  bottle_service:   { label: 'Bottle Service', emoji: '🥂', filterTag: '#BottleSvc'     },
 };
+
+// ─── Bar vibe keywords (family filter) ───────────────────────
+
+const BAR_KEYWORDS = ['bar', 'cocktail', 'brewery', 'pint', 'nightlife'];
+
+function isBarVibe(pub: Pub): boolean {
+  const vibe = (pub.vibe ?? '').toLowerCase();
+  return BAR_KEYWORDS.some((kw) => vibe.includes(kw));
+}
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -70,14 +83,21 @@ function LiveOpenDot() {
   );
 }
 
+// ─── Neutral VENUE badge (family tier on bar-type venues) ────
+
+function VenueBadge() {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="text-[10px] font-bold text-zinc-500 tracking-wider ring-1 ring-zinc-700 px-2 py-0.5 rounded-full">
+        VENUE
+      </span>
+    </span>
+  );
+}
+
 // ─── Feature badge ───────────────────────────────────────────
 
-function FeatureBadge({
-  feature, active,
-}: {
-  feature: string;
-  active: boolean;
-}) {
+function FeatureBadge({ feature, active }: { feature: string; active: boolean }) {
   const meta = FEATURE_META[feature];
   if (!meta) return null;
   return (
@@ -106,9 +126,9 @@ function Stars({ rating }: { rating: number }) {
         <span
           key={i}
           className={
-            i < full ? 'text-amber-400' :
-            i === full && half ? 'text-amber-400/50' :
-            'text-zinc-700'
+            i < full              ? 'text-amber-400' :
+            i === full && half    ? 'text-amber-400/50' :
+                                    'text-zinc-700'
           }
           style={{ fontSize: 11 }}
         >★</span>
@@ -120,9 +140,13 @@ function Stars({ rating }: { rating: number }) {
 // ─── Main card ───────────────────────────────────────────────
 
 export function PubCard({ pub, activeFilters, onOrderAhead }: Props) {
-  const open = isOpenNow();
-  const hasActiveFilter = activeFilters.some((f) => pub.features.includes(f as any));
-  const highlighted = activeFilters.length === 0 || hasActiveFilter;
+  const { ageTier }     = useAgeTierContext();
+  const open            = isOpenNow();
+  const barVibe         = isBarVibe(pub);
+  const showNeutral     = ageTier === 'family' && barVibe;
+
+  const hasActiveFilter = activeFilters.some((f) => pub.features.includes(f as Parameters<typeof pub.features.includes>[0]));
+  const highlighted     = activeFilters.length === 0 || hasActiveFilter;
 
   return (
     <div
@@ -147,14 +171,16 @@ export function PubCard({ pub, activeFilters, onOrderAhead }: Props) {
           <h3 className="text-zinc-100 font-black text-lg leading-tight">{pub.name}</h3>
         </div>
 
-        {/* Top-right: ORDER AHEAD chip */}
+        {/* Top-right: ORDER AHEAD chip + open status */}
         <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
           {pub.orderAheadAvailable && (
             <span className="bg-emerald-500 text-zinc-950 text-[9px] font-black px-2.5 py-1 rounded-full tracking-widest shadow-lg">
               ORDER AHEAD ↗
             </span>
           )}
-          {open && <LiveOpenDot />}
+          {open && (
+            showNeutral ? <VenueBadge /> : <LiveOpenDot />
+          )}
         </div>
       </div>
 
@@ -193,14 +219,10 @@ export function PubCard({ pub, activeFilters, onOrderAhead }: Props) {
           )}
         </div>
 
-        {/* Feature tags — show all, highlight active filters */}
+        {/* Feature tags */}
         <div className="flex flex-wrap gap-1.5 mb-3">
           {pub.features.map((f) => (
-            <FeatureBadge
-              key={f}
-              feature={f}
-              active={activeFilters.includes(f)}
-            />
+            <FeatureBadge key={f} feature={f} active={activeFilters.includes(f)} />
           ))}
         </div>
 
