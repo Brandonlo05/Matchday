@@ -70,13 +70,13 @@ export function StickyFooterCapture({ nextMatch, countdown, onReserve }: Props) 
       <div
         className="pointer-events-none h-12 w-full"
         style={{
-          background: 'linear-gradient(to top, rgba(9,9,11,1) 0%, rgba(9,9,11,0) 100%)',
+          background: 'linear-gradient(to top, rgba(11,15,25,1) 0%, rgba(11,15,25,0) 100%)',
         }}
       />
 
       {/* Footer content */}
       <div
-        className="bg-zinc-950 px-4 pb-4"
+        className="bg-obsidian px-4 pb-4 glass-nav"
         style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
       >
         {/* Eyebrow / context line */}
