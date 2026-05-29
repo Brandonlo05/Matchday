@@ -1,191 +1,219 @@
-// ============================================================
-// useFlash.ts
-// The Flash recommendation engine.
-// Builds a weighted candidate pool from pubs + freeActivities,
-// filters by age tier and left-swipe suppression, and returns
-// a single FlashResult per call.
-// ============================================================
+import { useCallback, useMemo, useRef } from 'react';
 
-import { useCallback } from 'react';
 import { CITIES } from './useMatchdayEngine';
-import type { CityId, AgeTier, FlashResult, Pub, FreeActivity } from '../types';
+import type { AgeTier, CityKey, FlashItemType, FlashResult, FreeActivity, Pub } from '../types';
 
-// ─── Context reason bank (12 strings, keyed by time-of-day + category) ───────
+const NIGHTLIFE_WORDS = ['bar', 'cocktail', 'brewery', 'pint', 'nightlife'];
 
-const REASONS_MORNING = [
-  'Perfect start before the afternoon crowd hits',
-  "Still quiet — you'll have the place to yourself",
-  'Locals come here before the tourists wake up',
-  'Under 15 minutes from the stadium and worth every second',
-];
+const CONTEXT_TEMPLATES = {
+  morning: [
+    'Perfect window before the afternoon match',
+    'Start the day local — no tourist traps',
+    'Walkable from downtown without a rideshare',
+    'Exactly the kind of spot you do not find on Google',
+  ],
+  afternoon: [
+    'Under 15 minutes from the stadium and still has walk-in space',
+    'Local pick — tourists almost never end up here',
+    'Ideal pit stop between fixtures today',
+    'Still room for your group without a reservation',
+  ],
+  evening: [
+    'The crowd builds here an hour before kickoff',
+    'Screens are locked on the match — atmosphere is guaranteed',
+    'Your best bet for a table without the stadium crush',
+    'Fans here know the score before the announcer does',
+  ],
+  late: [
+    'Late-night energy without the tourist markup',
+    'Still serving when the final whistle echoes',
+    'Where the city actually goes after the match',
+    'Walk-in friendly even after 10 PM',
+  ],
+} as const;
 
-const REASONS_AFTERNOON = [
-  'Perfect window before the afternoon match',
-  "Exactly the kind of spot you don't find on Google",
-  'Local pick — tourists almost never end up here',
-  'Under 15 minutes from the stadium and still has walk-in space',
-];
-
-const REASONS_EVENING = [
-  'The energy here during match hours is unlike anywhere else',
-  "Regulars have been coming here for years — tonight you're one of them",
-  'Best ratio of atmosphere to elbow room in the city right now',
-  "The kind of place that feels like a discovery even if it isn't",
-];
-
-const REASONS_LATE = [
-  'Still open, still worth it, still the right call',
-  "The last place standing that's actually good — don't overthink it",
-  'Late night here beats early everywhere else',
-  "You'll be back here tomorrow. Go tonight first.",
-];
-
-function getReasons(hour: number): string[] {
-  if (hour < 12) return REASONS_MORNING;
-  if (hour < 17) return REASONS_AFTERNOON;
-  if (hour < 22) return REASONS_EVENING;
-  return REASONS_LATE;
+interface FlashCandidate {
+  id: string;
+  name: string;
+  type: FlashItemType;
+  category: string;
+  distanceLabel: string;
+  vibeOrDescription: string;
+  primaryActionLabel: string;
+  primaryActionUrl: string;
+  pubId?: string;
+  weight: number;
 }
 
-/** Seeded pseudo-random based on a string ID — deterministic per call */
-function seededIndex(id: string, len: number): number {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  return hash % len;
+function pubSearchText(pub: Pub): string {
+  return `${pub.name} ${pub.tagline} ${pub.features.join(' ')}`.toLowerCase();
 }
 
-// ─── Age-tier compatibility check ────────────────────────────────────────────
+function isNightlifePub(pub: Pub): boolean {
+  return NIGHTLIFE_WORDS.some((w) => pubSearchText(pub).includes(w));
+}
 
-const BAR_KEYWORDS = ['bar', 'cocktail', 'brewery', 'pint', 'nightlife', 'club', 'lounge'];
+function fmtPubDistance(pub: Pub): string {
+  if (pub.distanceKm == null) return 'Near you';
+  if (pub.distanceKm < 1) return `${Math.round(pub.distanceKm * 1000)} m away`;
+  const miles = pub.distanceKm * 0.621371;
+  return `${pub.distanceKm.toFixed(1)} km · ${miles.toFixed(1)} mi`;
+}
 
-function pubCompatible(pub: Pub, ageTier: AgeTier): boolean {
-  if (ageTier === 'family') {
-    const vibe = (pub.vibe ?? pub.tagline ?? '').toLowerCase();
-    return !BAR_KEYWORDS.some((kw) => vibe.includes(kw));
+function timeBucket(): keyof typeof CONTEXT_TEMPLATES {
+  const h = new Date().getHours();
+  if (h < 12) return 'morning';
+  if (h < 16) return 'afternoon';
+  if (h < 22) return 'evening';
+  return 'late';
+}
+
+function pickContext(category: string, bucket: keyof typeof CONTEXT_TEMPLATES): string {
+  const pool = CONTEXT_TEMPLATES[bucket];
+  const seed = category.length + bucket.length;
+  return pool[seed % pool.length] ?? pool[0];
+}
+
+function activityCompatible(activity: FreeActivity, tier: AgeTier): boolean {
+  if (tier === 'family') return activity.minAge === 0;
+  if (tier === 'adult') return activity.minAge <= 18;
+  return true;
+}
+
+function pubCompatible(pub: Pub, tier: AgeTier): boolean {
+  if (tier === 'family' && isNightlifePub(pub)) return false;
+  return true;
+}
+
+function buildCandidates(
+  cityKey: CityKey,
+  ageTier: AgeTier,
+  leftIds: Set<string>,
+): FlashCandidate[] {
+  const city = CITIES.find((c) => c.id === cityKey);
+  if (!city) return [];
+
+  const bucket = timeBucket();
+  const candidates: FlashCandidate[] = [];
+
+  for (const pub of city.pubs) {
+    if (leftIds.has(pub.id) || !pubCompatible(pub, ageTier)) continue;
+
+    let weight = 0.55;
+    if (bucket === 'morning') weight *= 0.7;
+    if (bucket === 'evening' || bucket === 'late') weight *= 1.25;
+    if (bucket === 'late' && ageTier !== 'family' && isNightlifePub(pub)) weight *= 1.8;
+    if (bucket === 'morning' && !isNightlifePub(pub)) weight *= 1.2;
+
+    candidates.push({
+      id: pub.id,
+      name: pub.name,
+      type: 'pub',
+      category: pub.neighborhood,
+      distanceLabel: fmtPubDistance(pub),
+      vibeOrDescription: pub.tagline,
+      primaryActionLabel: 'Reserve my spot',
+      primaryActionUrl: `order:${pub.id}`,
+      pubId: pub.id,
+      weight,
+    });
   }
-  return true;
+
+  for (const activity of city.freeActivities) {
+    if (leftIds.has(activity.id) || !activityCompatible(activity, ageTier)) continue;
+
+    let weight = 0.45;
+    if (bucket === 'morning' || bucket === 'afternoon') weight *= 1.35;
+    if (bucket === 'late') weight *= 0.5;
+
+    candidates.push({
+      id: activity.id,
+      name: activity.name,
+      type: 'activity',
+      category: activity.category,
+      distanceLabel: activity.distance,
+      vibeOrDescription: activity.description,
+      primaryActionLabel: 'Open in Maps',
+      primaryActionUrl: `maps:${encodeURIComponent(activity.mapsQuery)}`,
+      weight,
+    });
+  }
+
+  return candidates;
 }
 
-function activityCompatible(act: FreeActivity, ageTier: AgeTier): boolean {
-  if (ageTier === 'family') return act.minAge === 0;
-  return true;
+function weightedPick(candidates: FlashCandidate[]): FlashCandidate | null {
+  if (candidates.length === 0) return null;
+  const total = candidates.reduce((s, c) => s + c.weight, 0);
+  let roll = Math.random() * total;
+  for (const c of candidates) {
+    roll -= c.weight;
+    if (roll <= 0) return c;
+  }
+  return candidates[candidates.length - 1] ?? null;
 }
 
-// ─── Time-of-day weights ──────────────────────────────────────────────────────
+export function useFlash(
+  cityKey: CityKey,
+  ageTier: AgeTier,
+  getLeftSwipedIds: () => Set<string>,
+) {
+  const seenRef = useRef<Set<string>>(new Set());
 
-interface Pool {
-  pubs: Pub[];
-  activities: FreeActivity[];
-}
+  const getNext = useCallback((): FlashResult | null => {
+    const leftIds = getLeftSwipedIds();
+    const candidates = buildCandidates(cityKey, ageTier, leftIds).filter(
+      (c) => !seenRef.current.has(c.id),
+    );
 
-function buildWeightedPool(pool: Pool, hour: number, ageTier: AgeTier): Array<{ item: Pub | FreeActivity; type: 'pub' | 'activity' }> {
-  // Weight: before noon = 35% pub / 65% activity
-  //         noon–5pm    = 55% pub / 45% activity
-  //         5pm–10pm    = 70% pub / 30% activity
-  //         after 10pm  = 85% pub (nightlife) / 15% activity
-  let pubWeight = 0.55;
-  let actWeight = 0.45;
+    if (candidates.length === 0) {
+      seenRef.current.clear();
+      const refreshed = buildCandidates(cityKey, ageTier, leftIds);
+      const pick = weightedPick(refreshed);
+      if (!pick) return null;
+      seenRef.current.add(pick.id);
+      const bucket = timeBucket();
+      return {
+        id: pick.id,
+        name: pick.name,
+        type: pick.type,
+        category: pick.category,
+        distanceLabel: pick.distanceLabel,
+        contextReason: pickContext(pick.category, bucket),
+        primaryActionLabel: pick.primaryActionLabel,
+        primaryActionUrl: pick.primaryActionUrl,
+        vibeOrDescription: pick.vibeOrDescription,
+        pubId: pick.pubId,
+      };
+    }
 
-  if (hour < 12) { pubWeight = 0.35; actWeight = 0.65; }
-  else if (hour < 17) { pubWeight = 0.55; actWeight = 0.45; }
-  else if (hour < 22) { pubWeight = 0.70; actWeight = 0.30; }
-  else if (ageTier !== 'family') { pubWeight = 0.85; actWeight = 0.15; }
+    const pick = weightedPick(candidates);
+    if (!pick) return null;
+    seenRef.current.add(pick.id);
+    const bucket = timeBucket();
 
-  const result: Array<{ item: Pub | FreeActivity; type: 'pub' | 'activity' }> = [];
+    return {
+      id: pick.id,
+      name: pick.name,
+      type: pick.type,
+      category: pick.category,
+      distanceLabel: pick.distanceLabel,
+      contextReason: pickContext(pick.category, bucket),
+      primaryActionLabel: pick.primaryActionLabel,
+      primaryActionUrl: pick.primaryActionUrl,
+      vibeOrDescription: pick.vibeOrDescription,
+      pubId: pick.pubId,
+    };
+  }, [cityKey, ageTier, getLeftSwipedIds]);
 
-  pool.pubs.forEach((pub) => {
-    // Nightlife pubs weighted heavier after 10pm for adult tiers
-    const isNightlife = BAR_KEYWORDS.some((kw) => (pub.vibe ?? '').toLowerCase().includes(kw));
-    const mult = (hour >= 22 && ageTier !== 'family' && isNightlife) ? 2 : 1;
-    for (let i = 0; i < mult; i++) result.push({ item: pub, type: 'pub' });
-  });
+  const resetSession = useCallback(() => {
+    seenRef.current.clear();
+  }, []);
 
-  pool.activities.forEach((act) => {
-    result.push({ item: act, type: 'activity' });
-  });
+  const hasCandidates = useMemo(() => {
+    const leftIds = getLeftSwipedIds();
+    return buildCandidates(cityKey, ageTier, leftIds).length > 0;
+  }, [cityKey, ageTier, getLeftSwipedIds]);
 
-  // Apply weights by duplicating proportionally
-  const pubCount  = Math.round(result.filter((r) => r.type === 'pub').length  * pubWeight * 10);
-  const actCount  = Math.round(result.filter((r) => r.type === 'activity').length * actWeight * 10);
-  const weighted: typeof result = [];
-  result.filter((r) => r.type === 'pub').forEach((r) => { for (let i = 0; i < Math.ceil(pubCount / pool.pubs.length || 1); i++) weighted.push(r); });
-  result.filter((r) => r.type === 'activity').forEach((r) => { for (let i = 0; i < Math.ceil(actCount / Math.max(pool.activities.length, 1)); i++) weighted.push(r); });
-
-  return weighted.length > 0 ? weighted : result;
-}
-
-// ─── Main hook ────────────────────────────────────────────────────────────────
-
-export function useFlash() {
-  const getFlash = useCallback(
-    (
-      cityKey: CityId,
-      ageTier: AgeTier,
-      excludeIds: string[],
-      sessionIndex: number = 0
-    ): FlashResult | null => {
-      const city = CITIES.find((c) => c.id === cityKey);
-      if (!city) return null;
-
-      const hour = new Date().getHours();
-
-      // Filter candidates
-      const eligiblePubs = city.pubs.filter(
-        (p) => !excludeIds.includes(p.id) && pubCompatible(p, ageTier)
-      );
-      const eligibleActivities = city.freeActivities.filter(
-        (a) => !excludeIds.includes(a.id) && activityCompatible(a, ageTier)
-      );
-
-      if (eligiblePubs.length === 0 && eligibleActivities.length === 0) return null;
-
-      // Build weighted pool
-      const pool = buildWeightedPool(
-        { pubs: eligiblePubs, activities: eligibleActivities },
-        hour,
-        ageTier
-      );
-
-      if (pool.length === 0) return null;
-
-      // Select using session index for deterministic rotation
-      const candidate = pool[(sessionIndex) % pool.length];
-      const reasons = getReasons(hour);
-
-      if (candidate.type === 'pub') {
-        const pub = candidate.item as Pub;
-        const reasonIdx = seededIndex(pub.id + sessionIndex, reasons.length);
-        return {
-          id: pub.id,
-          name: pub.name,
-          type: 'pub',
-          category: pub.features[0] ?? 'sports_bar',
-          distanceLabel: pub.distanceKm != null
-            ? `${pub.distanceKm.toFixed(1)} km away`
-            : pub.neighborhood,
-          contextReason: reasons[reasonIdx],
-          primaryActionLabel: 'Reserve My Spot →',
-          primaryActionUrl: `pub://${pub.id}`,
-          vibeOrDescription: pub.tagline,
-        };
-      } else {
-        const act = candidate.item as FreeActivity;
-        const reasonIdx = seededIndex(act.id + sessionIndex, reasons.length);
-        return {
-          id: act.id,
-          name: act.name,
-          type: 'activity',
-          category: act.category,
-          distanceLabel: act.distance,
-          contextReason: reasons[reasonIdx],
-          primaryActionLabel: 'Open in Maps →',
-          primaryActionUrl: `https://maps.google.com/?q=${encodeURIComponent(act.mapsQuery)}`,
-          vibeOrDescription: act.description,
-        };
-      }
-    },
-    []
-  );
-
-  return { getFlash };
+  return { getNext, resetSession, hasCandidates };
 }

@@ -554,6 +554,18 @@ export function OrderAheadModal({ pub, match, onClose, onSubmit }: Props) {
           </div>
         )}
 
+        {/* Mobile ordering window — honest copy */}
+        <div className="flex-shrink-0 mx-5 mt-3 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3">
+          <p className="text-sm font-bold text-zinc-100 leading-snug">
+            Mobile ordering opens 2 hours before kickoff
+          </p>
+          <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+            We&apos;ll notify you the second ordering slots open at {pub.name} so you walk in,
+            food&apos;s ready, line skipped. Drop your email and we&apos;ll lock in a free drink
+            voucher for you.
+          </p>
+        </div>
+
         {/* Scrollable body */}
         <div
           className="overflow-y-auto overscroll-contain flex-1 px-5 space-y-6 pb-4"

@@ -1,207 +1,268 @@
-// ============================================================
-// useDayPlanner.ts
-// Zero-input full-day itinerary generator.
-// 4 time brackets × 3 rotating templates per city.
-// Late Night slot replaced with family-safe alternative for family tier.
-// ============================================================
+import { useCallback, useEffect, useState } from 'react';
 
-import { useState, useCallback } from 'react';
 import { CITIES } from './useMatchdayEngine';
-import type { CityId, AgeTier, DayPlan, PlanSlot, Pub, FreeActivity } from '../types';
+import type { AgeTier, CityKey, DayPlan, FlashItemType, FreeActivity, PlanSlot, Pub } from '../types';
 
-// ─── Time bracket labels ──────────────────────────────────────
+type Bracket = 'morning' | 'afternoon' | 'evening' | 'late';
 
-const BRACKETS = [
-  { id: 'morning',   timeLabel: 'Morning',    timeEmoji: '🌅', start: 6,  end: 11 },
-  { id: 'afternoon', timeLabel: 'Afternoon',  timeEmoji: '☀️',  start: 11, end: 16 },
-  { id: 'evening',   timeLabel: 'Evening',    timeEmoji: '🌆', start: 16, end: 21 },
-  { id: 'late',      timeLabel: 'Late Night', timeEmoji: '🌙', start: 21, end: 6  },
-];
+const BRACKET_META: Record<Bracket, { timeLabel: string; timeEmoji: string; start: number; end: number }> = {
+  morning: { timeLabel: 'Morning', timeEmoji: '🌅', start: 6, end: 11 },
+  afternoon: { timeLabel: 'Afternoon', timeEmoji: '☀️', start: 11, end: 16 },
+  evening: { timeLabel: 'Evening', timeEmoji: '🌆', start: 16, end: 21 },
+  late: { timeLabel: 'Late Night', timeEmoji: '🌙', start: 21, end: 24 },
+};
 
-// ─── Template rotation — day of week mod 3 ───────────────────
+const NIGHTLIFE_WORDS = ['bar', 'cocktail', 'brewery', 'pint', 'nightlife'];
 
-function templateIndex(): number {
-  return new Date().getDay() % 3;
+function isNightlifePub(pub: Pub): boolean {
+  const text = `${pub.name} ${pub.tagline} ${pub.features.join(' ')}`.toLowerCase();
+  return NIGHTLIFE_WORDS.some((w) => text.includes(w));
 }
 
-// ─── Build slot from pub ──────────────────────────────────────
-
-function pubSlot(bracketId: string, pub: Pub): PlanSlot {
-  const hour = new Date().getHours();
-  const past = {
-    morning:   hour >= 11,
-    afternoon: hour >= 16,
-    evening:   hour >= 21,
-    late:      false,
-  }[bracketId] ?? false;
+function slotFromPub(pub: Pub, bracket: Bracket): PlanSlot {
+  const meta = BRACKET_META[bracket];
+  const now = new Date();
+  const past =
+    now.getHours() >= meta.end ||
+    (bracket === 'morning' && now.getHours() >= 11 && now.getHours() < 6);
 
   return {
-    id: `${bracketId}-${pub.id}`,
-    timeLabel:   BRACKETS.find((b) => b.id === bracketId)?.timeLabel ?? bracketId,
-    timeEmoji:   BRACKETS.find((b) => b.id === bracketId)?.timeEmoji ?? '📍',
-    name:        pub.name,
-    type:        'pub',
+    id: `${bracket}-${pub.id}`,
+    timeLabel: meta.timeLabel,
+    timeEmoji: meta.timeEmoji,
+    name: pub.name,
+    type: 'pub',
     description: pub.tagline,
-    actionLabel: 'Reserve →',
-    actionUrl:   `pub://${pub.id}`,
-    swappable:   past,
+    actionLabel: 'Reserve spot',
+    actionUrl: `order:${pub.id}`,
+    swappable: past || now.getHours() >= meta.start,
   };
 }
 
-// ─── Build slot from activity ─────────────────────────────────
-
-function activitySlot(bracketId: string, act: FreeActivity): PlanSlot {
-  const hour = new Date().getHours();
-  const past = {
-    morning:   hour >= 11,
-    afternoon: hour >= 16,
-    evening:   hour >= 21,
-    late:      false,
-  }[bracketId] ?? false;
+function slotFromActivity(activity: FreeActivity, bracket: Bracket): PlanSlot {
+  const meta = BRACKET_META[bracket];
+  const now = new Date();
+  const past = now.getHours() >= meta.end;
 
   return {
-    id: `${bracketId}-${act.id}`,
-    timeLabel:   BRACKETS.find((b) => b.id === bracketId)?.timeLabel ?? bracketId,
-    timeEmoji:   BRACKETS.find((b) => b.id === bracketId)?.timeEmoji ?? '📍',
-    name:        act.name,
-    type:        'activity',
-    description: act.description,
-    actionLabel: 'Get Directions →',
-    actionUrl:   `https://maps.google.com/?q=${encodeURIComponent(act.mapsQuery)}`,
-    swappable:   past,
+    id: `${bracket}-${activity.id}`,
+    timeLabel: meta.timeLabel,
+    timeEmoji: meta.timeEmoji,
+    name: activity.name,
+    type: 'activity',
+    description: activity.description,
+    actionLabel: 'Open in Maps',
+    actionUrl: `maps:${encodeURIComponent(activity.mapsQuery)}`,
+    swappable: past || now.getHours() >= meta.start,
   };
 }
 
-// ─── Build 4-slot plan ────────────────────────────────────────
-
-function buildPlan(cityKey: CityId, ageTier: AgeTier, tplIdx: number): PlanSlot[] {
-  const city = CITIES.find((c) => c.id === cityKey);
-  if (!city) return [];
-
-  const pubs = city.pubs;
-  const cityName = city.displayName;
-  const acts = city.freeActivities.filter((a) => ageTier === 'family' ? a.minAge === 0 : true);
-  const familySafeActs = city.freeActivities.filter((a) => a.minAge === 0);
-
-  // 3 templates, each with [morning, afternoon, evening, late] selections
-  // Template uses modular indexing into pubs/activities arrays
-  const templates: Array<[string, string, string, string]> = [
-    ['activity-0', 'activity-1', 'pub-0', 'pub-1'],
-    ['activity-2', 'pub-0',      'pub-1', 'pub-2'],
-    ['pub-0',      'activity-0', 'pub-1', 'activity-1'],
-  ];
-
-  const tpl = templates[tplIdx % 3];
-
-  function resolve(key: string, bracket: string): PlanSlot {
-    const [kind, idxStr] = key.split('-');
-    const idx = parseInt(idxStr, 10);
-
-    if (kind === 'pub') {
-      const pub = pubs[idx % pubs.length];
-      if (pub) return pubSlot(bracket, pub);
-    }
-
-    if (kind === 'activity') {
-      // For late night with family tier, force a family-safe activity
-      const pool = (bracket === 'late' && ageTier === 'family') ? familySafeActs : acts;
-      const act = pool[idx % Math.max(pool.length, 1)];
-      if (act) return activitySlot(bracket, act);
-    }
-
-    // Fallback
-    const fallback = acts[0];
-    if (fallback) return activitySlot(bracket, fallback);
-    return activitySlot(bracket, {
-      id: 'fallback', name: 'Explore the city', category: 'landmark',
-      distance: 'Nearby', description: 'Take a walk and discover something new.',
-      tip: 'The best discoveries are unplanned.', isFamilyFriendly: true,
-      minAge: 0, mapsQuery: cityName,
-    });
-  }
-
-  const brackets = ['morning', 'afternoon', 'evening', 'late'];
-
-  return brackets.map((bracket, i) => {
-    let slot = resolve(tpl[i], bracket);
-
-    // For family tier late night: ensure it's an activity, not a bar
-    if (bracket === 'late' && ageTier === 'family' && slot.type === 'pub') {
-      const safeAct = familySafeActs[i % Math.max(familySafeActs.length, 1)];
-      if (safeAct) {
-        slot = { ...activitySlot('late', safeAct), timeLabel: 'Evening Wind-Down', timeEmoji: '🌇' };
-      }
-    }
-
-    return slot;
-  });
+interface TemplateSlot {
+  bracket: Bracket;
+  pubIndex?: number;
+  activityIndex?: number;
 }
 
-// ─── Hook ────────────────────────────────────────────────────
+const TEMPLATES: Record<CityKey, TemplateSlot[][]> = {
+  la: [
+    [
+      { bracket: 'morning', activityIndex: 0 },
+      { bracket: 'afternoon', activityIndex: 3 },
+      { bracket: 'evening', pubIndex: 0 },
+      { bracket: 'late', pubIndex: 1 },
+    ],
+    [
+      { bracket: 'morning', activityIndex: 2 },
+      { bracket: 'afternoon', activityIndex: 1 },
+      { bracket: 'evening', pubIndex: 2 },
+      { bracket: 'late', pubIndex: 0 },
+    ],
+    [
+      { bracket: 'morning', activityIndex: 4 },
+      { bracket: 'afternoon', pubIndex: 3 },
+      { bracket: 'evening', activityIndex: 0 },
+      { bracket: 'late', pubIndex: 1 },
+    ],
+  ],
+  cdmx: [
+    [
+      { bracket: 'morning', activityIndex: 0 },
+      { bracket: 'afternoon', activityIndex: 1 },
+      { bracket: 'evening', pubIndex: 0 },
+      { bracket: 'late', pubIndex: 1 },
+    ],
+    [
+      { bracket: 'morning', activityIndex: 4 },
+      { bracket: 'afternoon', activityIndex: 2 },
+      { bracket: 'evening', pubIndex: 2 },
+      { bracket: 'late', pubIndex: 3 },
+    ],
+    [
+      { bracket: 'morning', activityIndex: 3 },
+      { bracket: 'afternoon', pubIndex: 0 },
+      { bracket: 'evening', activityIndex: 1 },
+      { bracket: 'late', pubIndex: 2 },
+    ],
+  ],
+  toronto: [
+    [
+      { bracket: 'morning', activityIndex: 4 },
+      { bracket: 'afternoon', activityIndex: 1 },
+      { bracket: 'evening', pubIndex: 0 },
+      { bracket: 'late', pubIndex: 2 },
+    ],
+    [
+      { bracket: 'morning', activityIndex: 0 },
+      { bracket: 'afternoon', activityIndex: 3 },
+      { bracket: 'evening', pubIndex: 1 },
+      { bracket: 'late', pubIndex: 0 },
+    ],
+    [
+      { bracket: 'morning', activityIndex: 2 },
+      { bracket: 'afternoon', pubIndex: 2 },
+      { bracket: 'evening', activityIndex: 1 },
+      { bracket: 'late', pubIndex: 1 },
+    ],
+  ],
+  ny: [
+    [
+      { bracket: 'morning', activityIndex: 0 },
+      { bracket: 'afternoon', activityIndex: 4 },
+      { bracket: 'evening', pubIndex: 0 },
+      { bracket: 'late', pubIndex: 1 },
+    ],
+    [
+      { bracket: 'morning', activityIndex: 2 },
+      { bracket: 'afternoon', activityIndex: 1 },
+      { bracket: 'evening', pubIndex: 2 },
+      { bracket: 'late', pubIndex: 3 },
+    ],
+    [
+      { bracket: 'morning', activityIndex: 3 },
+      { bracket: 'afternoon', pubIndex: 0 },
+      { bracket: 'evening', activityIndex: 0 },
+      { bracket: 'late', pubIndex: 1 },
+    ],
+  ],
+};
 
-export function useDayPlanner(cityKey: CityId, ageTier: AgeTier) {
-  const tplIdx = templateIndex();
-  const city = CITIES.find((c) => c.id === cityKey);
+function buildPlan(cityKey: CityKey, ageTier: AgeTier): DayPlan {
+  const city = CITIES.find((c) => c.id === cityKey)!;
+  const templateIndex = new Date().getDay() % 3;
+  const template = TEMPLATES[cityKey][templateIndex] ?? TEMPLATES[cityKey][0];
 
-  const initialSlots = buildPlan(cityKey, ageTier, tplIdx);
-  const [slots, setSlots] = useState<PlanSlot[]>(initialSlots);
+  const familyActivities = city.freeActivities.filter((a) => a.minAge === 0);
+  const familyPubs = city.pubs.filter((p) => !isNightlifePub(p));
+  const eveningActivities = familyActivities.filter((a) =>
+    ['park', 'viewpoint', 'trail', 'landmark'].includes(a.category),
+  );
 
-  // Called when city changes
-  const resetForCity = useCallback((newCityKey: CityId) => {
-    setSlots(buildPlan(newCityKey, ageTier, tplIdx));
-  }, [ageTier, tplIdx]);
+  const slots: PlanSlot[] = template.map((t) => {
+    if (t.bracket === 'late' && ageTier === 'family') {
+      const activity = eveningActivities[t.activityIndex ?? 0] ?? familyActivities[0];
+      return slotFromActivity(activity, 'evening');
+    }
 
-  /** Swap a single slot to the next available item in its bracket */
-  const swapSlot = useCallback((slotId: string) => {
-    setSlots((prev) => {
-      const idx = prev.findIndex((s) => s.id === slotId);
-      if (idx === -1) return prev;
+    if (t.pubIndex != null) {
+      const pool = ageTier === 'family' ? familyPubs : city.pubs;
+      const pub = pool[t.pubIndex % pool.length] ?? pool[0];
+      return slotFromPub(pub, t.bracket);
+    }
 
-      const bracket = slotId.split('-')[0];
-      const city2 = CITIES.find((c) => c.id === cityKey);
-      if (!city2) return prev;
+    const activity = familyActivities[t.activityIndex ?? 0] ?? city.freeActivities[0];
+    return slotFromActivity(activity, t.bracket);
+  });
 
-      const currentName = prev[idx].name;
-      const pubs = city2.pubs.filter((p) => p.name !== currentName);
-      const acts = city2.freeActivities.filter(
-        (a) => (ageTier === 'family' ? a.minAge === 0 : true) && a.name !== currentName
-      );
-
-      // Cycle: current type → try other type → cycle back
-      const current = prev[idx];
-      let newSlot: PlanSlot;
-
-      if (current.type === 'pub' && acts.length > 0) {
-        const act = acts[idx % acts.length];
-        newSlot = activitySlot(bracket, act);
-      } else if (current.type === 'activity' && pubs.length > 0) {
-        const pub = pubs[idx % pubs.length];
-        // Respect family-safe for late
-        if (bracket === 'late' && ageTier === 'family') {
-          const safeAct = acts[idx % Math.max(acts.length, 1)];
-          if (safeAct) {
-            newSlot = { ...activitySlot('late', safeAct), timeLabel: 'Evening Wind-Down', timeEmoji: '🌇' };
-          } else {
-            return prev;
-          }
-        } else {
-          newSlot = pubSlot(bracket, pub);
-        }
-      } else {
-        return prev; // nothing to swap to
-      }
-
-      const updated = [...prev];
-      updated[idx] = newSlot;
-      return updated;
-    });
-  }, [cityKey, ageTier]);
-
-  const plan: DayPlan = {
-    cityName: city?.displayName ?? cityKey,
-    date: new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+  return {
+    cityName: city.displayName,
+    date: new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+    }),
     slots,
   };
+}
 
-  return { plan, swapSlot, resetForCity };
+function alternateSlot(
+  cityKey: CityKey,
+  ageTier: AgeTier,
+  bracket: Bracket,
+  excludeIds: string[],
+): PlanSlot | null {
+  const city = CITIES.find((c) => c.id === cityKey);
+  if (!city) return null;
+
+  const pool: { slot: PlanSlot; id: string }[] = [];
+
+  const pubs = ageTier === 'family' ? city.pubs.filter((p) => !isNightlifePub(p)) : city.pubs;
+  for (const pub of pubs) {
+    if (!excludeIds.includes(pub.id)) {
+      pool.push({ slot: slotFromPub(pub, bracket), id: pub.id });
+    }
+  }
+
+  const activities =
+    ageTier === 'family'
+      ? city.freeActivities.filter((a) => a.minAge === 0)
+      : city.freeActivities;
+
+  for (const activity of activities) {
+    if (!excludeIds.includes(activity.id)) {
+      pool.push({ slot: slotFromActivity(activity, bracket), id: activity.id });
+    }
+  }
+
+  if (bracket === 'late' && ageTier === 'family') {
+    const quiet = activities.filter((a) =>
+      ['park', 'viewpoint', 'trail'].includes(a.category),
+    );
+    const pick = quiet.find((a) => !excludeIds.includes(a.id));
+    if (pick) return slotFromActivity(pick, 'evening');
+  }
+
+  return pool[0]?.slot ?? null;
+}
+
+export function useDayPlanner(cityKey: CityKey, ageTier: AgeTier) {
+  const [plan, setPlan] = useState<DayPlan>(() => buildPlan(cityKey, ageTier));
+  const [swapCursor, setSwapCursor] = useState<Record<string, number>>({});
+
+  const refreshPlan = useCallback(() => {
+    setPlan(buildPlan(cityKey, ageTier));
+    setSwapCursor({});
+  }, [cityKey, ageTier]);
+
+  useEffect(() => {
+    setPlan(buildPlan(cityKey, ageTier));
+    setSwapCursor({});
+  }, [cityKey, ageTier]);
+
+  const swapSlot = useCallback(
+    (slotId: string) => {
+      setPlan((prev) => {
+        const idx = prev.slots.findIndex((s) => s.id === slotId);
+        if (idx < 0) return prev;
+
+        const slot = prev.slots[idx];
+        const bracket = (['morning', 'afternoon', 'evening', 'late'] as Bracket[]).find(
+          (b) => slot.timeLabel === BRACKET_META[b].timeLabel,
+        ) ?? 'afternoon';
+
+        const excludeIds = prev.slots.map((s) => s.id.split('-').slice(1).join('-'));
+        const cursor = (swapCursor[slotId] ?? 0) + 1;
+        setSwapCursor((c) => ({ ...c, [slotId]: cursor }));
+
+        const next = alternateSlot(cityKey, ageTier, bracket, excludeIds);
+        if (!next) return prev;
+
+        const slots = [...prev.slots];
+        slots[idx] = { ...next, swappable: true };
+        return { ...prev, slots };
+      });
+    },
+    [cityKey, ageTier, swapCursor],
+  );
+
+  return { plan, swapSlot, refreshPlan };
 }

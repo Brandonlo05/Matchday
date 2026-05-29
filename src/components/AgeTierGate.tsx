@@ -1,22 +1,9 @@
-// ============================================================
-// AgeTierGate.tsx
-// One-time full-screen overlay. Blocks the entire app until
-// the user selects their tier. Renders only once per install.
-// No skip. No close. One decision, permanent.
-// ============================================================
+import { useEffect, useState } from 'react';
 
-import { useState } from 'react';
 import { useAgeTierContext } from '../context/AgeTierContext';
 import type { AgeTier } from '../types';
 
-interface TierOption {
-  tier: AgeTier;
-  emoji: string;
-  label: string;
-  description: string;
-}
-
-const OPTIONS: TierOption[] = [
+const OPTIONS: { tier: AgeTier; emoji: string; label: string; description: string }[] = [
   {
     tier: 'family',
     emoji: '🧒',
@@ -38,94 +25,64 @@ const OPTIONS: TierOption[] = [
 ];
 
 export function AgeTierGate() {
-  const { hasSelected, setAgeTier } = useAgeTierContext();
-  const [flashId, setFlashId] = useState<AgeTier | null>(null);
+  const { setAgeTier } = useAgeTierContext();
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-  if (hasSelected) return null;
+  useEffect(() => {
+    requestAnimationFrame(() => setMounted(true));
+  }, []);
 
-  function handleSelect(tier: AgeTier) {
+  const handleSelect = (tier: AgeTier) => {
     setFlashId(tier);
-    // Brief flash animation, then commit
-    setTimeout(() => {
-      setAgeTier(tier);
-    }, 160);
-  }
+    window.setTimeout(() => setAgeTier(tier), 150);
+  };
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-zinc-950"
-      style={{ animation: 'ageFadeIn 0.2s ease-out forwards' }}
+      className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-obsidian px-4 cinematic-grain"
+      style={{
+        opacity: mounted ? 1 : 0,
+        transition: 'opacity 200ms ease-out',
+      }}
     >
-      <div
-        className="w-full px-6 flex flex-col items-center"
-        style={{ maxWidth: 420 }}
-      >
-        {/* Logo + wordmark */}
-        <div className="mb-8 text-center">
-          <span className="text-4xl">⚽</span>
-          <p className="mt-2 text-xl font-black tracking-tight text-zinc-100">
-            MatchDay<span className="text-emerald-500">Shovel</span>
-          </p>
-          <p className="text-[11px] text-zinc-600 font-semibold tracking-widest uppercase mt-0.5">
-            FIFA World Cup 2026
-          </p>
-        </div>
-
-        {/* Headline */}
-        <h1 className="text-2xl font-black text-zinc-100 text-center leading-tight mb-2">
-          Who's exploring with you?
-        </h1>
-        <p className="text-sm text-zinc-400 text-center mb-8 leading-relaxed">
-          We'll personalize everything.{' '}
-          <span className="text-zinc-500">You can change this anytime in Settings.</span>
-        </p>
-
-        {/* Tier cards */}
-        <div className="w-full space-y-3">
-          {OPTIONS.map((opt) => {
-            const isFlashing = flashId === opt.tier;
-            return (
-              <button
-                key={opt.tier}
-                onClick={() => handleSelect(opt.tier)}
-                className="w-full flex items-center gap-4 bg-zinc-900 rounded-2xl px-5 py-4 text-left transition-all duration-150 active:scale-[0.98] touch-manipulation"
-                style={{
-                  WebkitTapHighlightColor: 'transparent',
-                  outline: isFlashing ? '2px solid rgb(16,185,129)' : '1px solid rgb(39,39,42)',
-                  outlineOffset: isFlashing ? '2px' : '0px',
-                  boxShadow: isFlashing ? '0 0 0 4px rgba(16,185,129,0.15)' : 'none',
-                  transition: 'outline 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease',
-                }}
-              >
-                <span className="text-3xl flex-shrink-0" aria-hidden="true">
-                  {opt.emoji}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-base font-bold text-zinc-100 leading-none mb-1">
-                    {opt.label}
-                  </p>
-                  <p className="text-sm text-zinc-400 leading-snug">
-                    {opt.description}
-                  </p>
-                </div>
-                <span className="text-zinc-600 flex-shrink-0 text-lg">›</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Fine print */}
-        <p className="mt-8 text-[11px] text-zinc-700 text-center">
-          Your preference is saved only on this device.
-        </p>
+      <div className="mb-8 text-center relative z-10">
+        <p className="type-meta text-emerald-400/90 mb-2">MatchDay Shovel</p>
+        <p className="text-2xl font-black text-obsidian-text">⚽</p>
       </div>
 
-      <style>{`
-        @keyframes ageFadeIn {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-      `}</style>
+      <h1 className="type-display text-2xl text-center mb-2 relative z-10">
+        Who&apos;s exploring with you?
+      </h1>
+      <p className="text-sm text-obsidian-muted text-center mb-8 max-w-xs relative z-10">
+        We&apos;ll personalize everything. You can change this anytime in Settings.
+      </p>
+
+      <div className="w-full max-w-md space-y-3 relative z-10">
+        {OPTIONS.map((opt) => (
+          <button
+            key={opt.tier}
+            type="button"
+            onClick={() => handleSelect(opt.tier)}
+            className={[
+              'w-full text-left rounded-2xl glass-panel px-5 py-4 transition-all duration-150',
+              'active:scale-[0.97] touch-manipulation min-h-[72px]',
+              flashId === opt.tier
+                ? 'ring-1 ring-emerald-500/50 shadow-lg shadow-emerald-500/15'
+                : '',
+            ].join(' ')}
+            style={{ WebkitTapHighlightColor: 'transparent' }}
+          >
+            <div className="flex items-center gap-4">
+              <span className="text-3xl">{opt.emoji}</span>
+              <div>
+                <p className="font-bold text-obsidian-text text-base">{opt.label}</p>
+                <p className="text-sm text-obsidian-muted mt-0.5">{opt.description}</p>
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

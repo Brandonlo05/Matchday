@@ -1,10 +1,5 @@
-// ============================================================
-// AgeTierContext.tsx
-// Provides ageTier + setAgeTier to the entire component tree.
-// Wrap <App /> in <AgeTierProvider> as the outermost wrapper.
-// ============================================================
+import { createContext, useContext, type ReactNode } from 'react';
 
-import { createContext, useContext } from 'react';
 import { useAgeTier } from '../hooks/useAgeTier';
 import type { AgeTier } from '../types';
 
@@ -14,13 +9,9 @@ interface AgeTierContextValue {
   hasSelected: boolean;
 }
 
-const AgeTierContext = createContext<AgeTierContextValue>({
-  ageTier: null,
-  setAgeTier: () => {},
-  hasSelected: false,
-});
+const AgeTierContext = createContext<AgeTierContextValue | null>(null);
 
-export function AgeTierProvider({ children }: { children: React.ReactNode }) {
+export function AgeTierProvider({ children }: { children: ReactNode }) {
   const value = useAgeTier();
   return (
     <AgeTierContext.Provider value={value}>
@@ -29,7 +20,10 @@ export function AgeTierProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Consume age tier anywhere in the tree — never null after gate clears */
 export function useAgeTierContext(): AgeTierContextValue {
-  return useContext(AgeTierContext);
+  const ctx = useContext(AgeTierContext);
+  if (!ctx) {
+    throw new Error('useAgeTierContext must be used within AgeTierProvider');
+  }
+  return ctx;
 }

@@ -1,40 +1,29 @@
-// ============================================================
-// useAgeTier.ts
-// Reads and writes the user's one-time age tier preference.
-// Stored forever under `mds_age_tier` in localStorage.
-// ============================================================
+import { useCallback, useState } from 'react';
 
-import { useState, useCallback } from 'react';
 import type { AgeTier } from '../types';
 
-const LS_KEY = 'mds_age_tier';
+const STORAGE_KEY = 'mds_age_tier';
 
-function readStored(): AgeTier | null {
+function readTier(): AgeTier | null {
   try {
-    const v = localStorage.getItem(LS_KEY);
-    if (v === 'family' || v === 'adult' || v === 'open') return v;
-    return null;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw === 'family' || raw === 'adult' || raw === 'open') return raw;
   } catch {
-    return null;
+    /* private mode */
   }
+  return null;
 }
 
-export interface UseAgeTierReturn {
-  ageTier: AgeTier | null;
-  setAgeTier: (tier: AgeTier) => void;
-  hasSelected: boolean;
-}
-
-export function useAgeTier(): UseAgeTierReturn {
-  const [ageTier, setAgeTierState] = useState<AgeTier | null>(readStored);
+export function useAgeTier() {
+  const [ageTier, setAgeTierState] = useState<AgeTier | null>(readTier);
 
   const setAgeTier = useCallback((tier: AgeTier) => {
-    try {
-      localStorage.setItem(LS_KEY, tier);
-    } catch {
-      // localStorage unavailable — still update in-memory state
-    }
     setAgeTierState(tier);
+    try {
+      localStorage.setItem(STORAGE_KEY, tier);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   return {

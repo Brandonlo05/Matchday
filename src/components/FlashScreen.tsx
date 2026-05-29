@@ -1,360 +1,273 @@
-// ============================================================
-// FlashScreen.tsx
-// Full-screen Flash overlay. One recommendation at a time.
-// Swipe left to skip, swipe right (or primary CTA) to act.
-// Touch drag: card follows finger with translate + rotate.
-// After 5 right swipes total: trained toast fires once.
-// ============================================================
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { useFlash }            from '../hooks/useFlash';
+import { useAgeTierContext } from '../context/AgeTierContext';
+import { useFlash } from '../hooks/useFlash';
 import { useSwipePreferences } from '../hooks/useSwipePreferences';
-import { useAgeTierContext }   from '../context/AgeTierContext';
-import { CoinFlip }            from './CoinFlip';
-import type { CityId, FlashResult } from '../types';
+import type { CityKey, FlashResult } from '../types';
+import { CoinFlip } from './CoinFlip';
 
-// ─── Swipe toast ──────────────────────────────────────────────
-
-function TrainedToast({ onDone }: { onDone: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 3000);
-    return () => clearTimeout(t);
-  }, [onDone]);
-
-  return (
-    <div
-      className="fixed bottom-28 left-1/2 z-[60] -translate-x-1/2"
-      style={{ animation: 'toastUp 0.25s ease-out forwards' }}
-    >
-      <div className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm font-medium px-5 py-3 rounded-2xl shadow-xl whitespace-nowrap">
-        Your Flash picks just got smarter ✓
-      </div>
-      <style>{`
-        @keyframes toastUp {
-          from { opacity: 0; transform: translateX(-50%) translateY(12px); }
-          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-        }
-      `}</style>
-    </div>
-  );
+interface FlashScreenProps {
+  cityKey: CityKey;
+  onClose: () => void;
+  onOrderAhead: (pubId: string) => void;
 }
 
-// ─── Card ─────────────────────────────────────────────────────
+const SWIPE_THRESHOLD = 80;
 
-interface CardProps {
-  result: FlashResult;
-  onRight: () => void;
-  onLeft:  () => void;
-  entering?: 'from-right' | 'from-left';
-  exiting?:  'to-right'   | 'to-left';
-}
-
-function FlashCard({ result, onRight, onLeft, entering, exiting }: CardProps) {
-  const touchStartX = useRef<number | null>(null);
-  const [dragX, setDragX] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-
-  // Animation state
-  let animStyle: React.CSSProperties = {};
-  if (entering === 'from-right') {
-    animStyle = { animation: 'cardInFromRight 0.18s ease-out forwards' };
-  } else if (entering === 'from-left') {
-    animStyle = { animation: 'cardInFromLeft 0.18s ease-out forwards' };
-  } else if (exiting === 'to-right') {
-    animStyle = { animation: 'cardOutToRight 0.22s ease-out forwards' };
-  } else if (exiting === 'to-left') {
-    animStyle = { animation: 'cardOutToLeft 0.22s ease-out forwards' };
-  } else if (isDragging) {
-    const rot = (dragX / 300) * 12;
-    animStyle = {
-      transform: `translateX(${dragX}px) rotate(${rot}deg)`,
-    };
-  }
-
-  function handleTouchStart(e: React.TouchEvent) {
-    touchStartX.current = e.touches[0]?.clientX ?? null;
-    setIsDragging(true);
-  }
-
-  function handleTouchMove(e: React.TouchEvent) {
-    if (touchStartX.current == null) return;
-    const dx = (e.touches[0]?.clientX ?? 0) - touchStartX.current;
-    setDragX(dx);
-  }
-
-  function handleTouchEnd() {
-    setIsDragging(false);
-    if (dragX > 80)  { setDragX(0); onRight(); }
-    else if (dragX < -80) { setDragX(0); onLeft();  }
-    else { setDragX(0); }
-    touchStartX.current = null;
-  }
-
-  const leftOpacity  = Math.min(1, Math.abs(Math.min(dragX, 0)) / 80);
-  const rightOpacity = Math.min(1, Math.max(dragX, 0) / 80);
-
-  return (
-    <div
-      className="mx-6 bg-zinc-900 ring-1 ring-zinc-800 rounded-3xl p-6 relative select-none"
-      style={animStyle}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-    >
-      {/* Left indicator */}
-      <div
-        className="absolute top-5 left-5 text-2xl pointer-events-none"
-        style={{ opacity: leftOpacity, transition: isDragging ? 'none' : 'opacity 0.15s' }}
-      >
-        <span className="text-zinc-500">✕</span>
-      </div>
-
-      {/* Right indicator */}
-      <div
-        className="absolute top-5 right-5 text-2xl pointer-events-none"
-        style={{ opacity: rightOpacity, transition: isDragging ? 'none' : 'opacity 0.15s' }}
-      >
-        <span className="text-emerald-400">♥</span>
-      </div>
-
-      {/* ⚡ FLASH label */}
-      <p className="text-[10px] font-black text-emerald-500 tracking-widest uppercase mb-3">
-        ⚡ FLASH
-      </p>
-
-      {/* Venue name */}
-      <h2 className="text-[26px] font-black text-zinc-100 leading-tight mb-2">
-        {result.name}
-      </h2>
-
-      {/* Context reason */}
-      <p className="text-sm text-zinc-400 italic mb-3 leading-snug">
-        {result.contextReason}
-      </p>
-
-      {/* Distance pill */}
-      <div className="inline-flex items-center gap-1.5 bg-zinc-800 rounded-full px-3 py-1.5 mb-3">
-        <span className="text-xs text-zinc-500">📍</span>
-        <span className="text-xs text-zinc-400 font-medium">{result.distanceLabel}</span>
-      </div>
-
-      {/* Vibe / description */}
-      <p className="text-sm text-zinc-300 leading-snug mb-5">{result.vibeOrDescription}</p>
-
-      {/* Divider */}
-      <div className="border-t border-zinc-800 mb-4" />
-
-      {/* Primary CTA */}
-      <button
-        onClick={onRight}
-        className="w-full bg-emerald-500 text-zinc-950 font-bold text-sm rounded-xl active:scale-[0.97] active:bg-emerald-400 transition-all touch-manipulation shadow-lg shadow-emerald-500/20"
-        style={{ height: 52, WebkitTapHighlightColor: 'transparent' }}
-      >
-        {result.primaryActionLabel}
-      </button>
-
-      {/* Secondary — swipe for another */}
-      <button
-        onClick={onLeft}
-        className="w-full ring-1 ring-zinc-700 text-zinc-300 font-bold text-sm rounded-xl mt-2 active:scale-[0.97] active:opacity-80 transition-all touch-manipulation"
-        style={{ height: 44, WebkitTapHighlightColor: 'transparent' }}
-      >
-        Swipe for another →
-      </button>
-
-      {/* Tertiary — coin flip */}
-      <div className="mt-3">
-        <CoinFlip
-          venueName={result.name}
-          onPrimaryAction={onRight}
-          onSwipeNext={onLeft}
-          maxFlips={3}
-        />
-      </div>
-    </div>
-  );
-}
-
-// ─── Main screen ──────────────────────────────────────────────
-
-interface Props {
-  cityKey:        CityId;
-  onClose:        () => void;
-  onPubReserve:   (pubId: string) => void;
-}
-
-type AnimDir = 'from-right' | 'from-left' | 'to-right' | 'to-left' | null;
-
-export function FlashScreen({ cityKey, onClose, onPubReserve }: Props) {
-  const { ageTier }                             = useAgeTierContext();
-  const { getFlash }                            = useFlash();
+export function FlashScreen({ cityKey, onClose, onOrderAhead }: FlashScreenProps) {
+  const { ageTier } = useAgeTierContext();
+  const tier = ageTier ?? 'adult';
   const { recordSwipe, getLeftSwipedIds, swipeCount } = useSwipePreferences();
+  const { getNext, resetSession } = useFlash(cityKey, tier, getLeftSwipedIds);
 
-  const [sessionIndex, setSessionIndex] = useState(0);
-  const [current, setCurrent]           = useState<FlashResult | null>(null);
-  const [exitDir, setExitDir]           = useState<AnimDir>(null);
-  const [enterDir, setEnterDir]         = useState<AnimDir>(null);
-  const [showToast, setShowToast]       = useState(false);
-  const toastShownRef                   = useRef(false);
+  const [card, setCard] = useState<FlashResult | null>(null);
+  const [incoming, setIncoming] = useState<FlashResult | null>(null);
+  const [visible, setVisible] = useState(false);
+  const [dragX, setDragX] = useState(0);
+  const [animating, setAnimating] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [coinFlips, setCoinFlips] = useState(0);
+  const [toastShown, setToastShown] = useState(false);
 
-  const prevSwipeCount = useRef(swipeCount);
+  const startXRef = useRef(0);
+  const draggingRef = useRef(false);
 
-  // Load initial card
+  const loadNext = useCallback(() => getNext(), [getNext]);
+
   useEffect(() => {
-    const excluded = getLeftSwipedIds();
-    const flash = getFlash(cityKey, ageTier ?? 'adult', excluded, sessionIndex);
-    setCurrent(flash);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    resetSession();
+    setCard(loadNext());
+    requestAnimationFrame(() => setVisible(true));
+  }, [cityKey, resetSession, loadNext]);
 
-  // Trained toast check
   useEffect(() => {
-    if (
-      swipeCount > prevSwipeCount.current &&
-      swipeCount % 5 === 0 &&
-      !toastShownRef.current
-    ) {
-      toastShownRef.current = true;
-      setShowToast(true);
-    }
-    prevSwipeCount.current = swipeCount;
-  }, [swipeCount]);
-
-  // Keyboard escape
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
-    }
+    };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
   }, [onClose]);
 
-  const advance = useCallback((direction: 'left' | 'right') => {
-    if (!current) return;
-    recordSwipe(current.id, direction, current.type, cityKey);
-
-    const exitAnim: AnimDir = direction === 'right' ? 'to-right' : 'to-left';
-    setExitDir(exitAnim);
-
-    setTimeout(() => {
-      setExitDir(null);
-      const nextIdx = sessionIndex + 1;
-      setSessionIndex(nextIdx);
-      const excluded = getLeftSwipedIds();
-      const next = getFlash(cityKey, ageTier ?? 'adult', excluded, nextIdx);
-      setCurrent(next);
-      setEnterDir(direction === 'right' ? 'from-left' : 'from-right');
-      setTimeout(() => setEnterDir(null), 200);
-    }, 200);
-  }, [current, sessionIndex, cityKey, ageTier, recordSwipe, getLeftSwipedIds, getFlash]);
-
-  const handleRight = useCallback(() => {
-    if (!current) return;
-    if (current.type === 'pub') {
-      const pubId = current.primaryActionUrl.replace('pub://', '');
-      onPubReserve(pubId);
-      advance('right');
-    } else {
-      window.open(current.primaryActionUrl, '_blank', 'noopener');
-      advance('right');
+  useEffect(() => {
+    if (swipeCount > 0 && swipeCount % 5 === 0 && !toastShown) {
+      setShowToast(true);
+      setToastShown(true);
+      const t = window.setTimeout(() => setShowToast(false), 3000);
+      return () => window.clearTimeout(t);
     }
-  }, [current, onPubReserve, advance]);
+  }, [swipeCount, toastShown]);
 
-  const handleLeft = useCallback(() => advance('left'), [advance]);
+  const completeSwipe = useCallback(
+    (direction: 'left' | 'right') => {
+      if (!card || animating) return;
+      setAnimating(true);
+
+      recordSwipe(card.id, direction, card.type, cityKey, card.name);
+
+      if (direction === 'right') {
+        if (card.primaryActionUrl.startsWith('order:')) {
+          const pubId = card.pubId ?? card.primaryActionUrl.replace('order:', '');
+          onOrderAhead(pubId);
+        } else if (card.primaryActionUrl.startsWith('maps:')) {
+          const q = decodeURIComponent(card.primaryActionUrl.replace('maps:', ''));
+          window.open(`https://maps.google.com/?q=${q}`, '_blank', 'noopener,noreferrer');
+        }
+      }
+
+      setDragX(direction === 'left' ? -400 : 400);
+
+      const next = loadNext();
+      setIncoming(next);
+
+      window.setTimeout(() => {
+        setCard(next);
+        setIncoming(null);
+        setDragX(0);
+        setAnimating(false);
+      }, 220);
+    },
+    [card, animating, recordSwipe, cityKey, onOrderAhead, loadNext],
+  );
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (animating) return;
+    startXRef.current = e.touches[0]?.clientX ?? 0;
+    draggingRef.current = true;
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!draggingRef.current || animating) return;
+    setDragX((e.touches[0]?.clientX ?? 0) - startXRef.current);
+  };
+
+  const onTouchEnd = () => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    if (dragX > SWIPE_THRESHOLD) completeSwipe('right');
+    else if (dragX < -SWIPE_THRESHOLD) completeSwipe('left');
+    else setDragX(0);
+  };
+
+  const handlePrimary = () => {
+    if (!card) return;
+    completeSwipe('right');
+  };
+
+  const rotateZ = Math.max(-14, Math.min(14, dragX / 14));
+  const rotateY = Math.max(-22, Math.min(22, dragX / 18));
+  const rotateX = Math.max(-8, Math.min(8, -dragX / 45));
+  const scale = 1 - Math.min(0.045, Math.abs(dragX) / 2200);
+  const leftOpacity = Math.min(1, Math.abs(Math.min(0, dragX)) / SWIPE_THRESHOLD);
+  const rightOpacity = Math.min(1, Math.max(0, dragX) / SWIPE_THRESHOLD);
+
+  const cardTransform = animating
+    ? `translate3d(${dragX}px, 0, 0) rotateY(${rotateY}deg) rotateX(${rotateX}deg) rotateZ(${rotateZ}deg) scale(${scale})`
+    : `translate3d(${dragX}px, 0, 0) rotateY(${rotateY}deg) rotateX(${rotateX}deg) rotateZ(${rotateZ}deg) scale(${scale})`;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-zinc-950"
-      style={{ animation: 'flashFadeIn 0.18s ease-out forwards' }}
+      className="fixed inset-0 z-50 flex flex-col bg-obsidian"
+      style={{
+        opacity: visible ? 1 : 0,
+        transition: 'opacity 180ms ease-out',
+      }}
       role="dialog"
       aria-modal="true"
       aria-label="Flash recommendation"
     >
-      <style>{`
-        @keyframes flashFadeIn {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-        @keyframes cardInFromRight {
-          from { opacity: 0; transform: translateX(60px); }
-          to   { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes cardInFromLeft {
-          from { opacity: 0; transform: translateX(-60px); }
-          to   { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes cardOutToRight {
-          from { opacity: 1; transform: translateX(0) rotate(0deg); }
-          to   { opacity: 0; transform: translateX(120px) rotate(12deg); }
-        }
-        @keyframes cardOutToLeft {
-          from { opacity: 1; transform: translateX(0) rotate(0deg); }
-          to   { opacity: 0; transform: translateX(-120px) rotate(-12deg); }
-        }
-      `}</style>
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute top-safe right-4 z-10 w-11 h-11 rounded-full glass-panel text-obsidian-muted flex items-center justify-center active:opacity-80 touch-manipulation mt-4"
+        style={{ WebkitTapHighlightColor: 'transparent' }}
+        aria-label="Close Flash"
+      >
+        ✕
+      </button>
 
-      {/* Header */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 pt-safe pt-4 pb-3 border-b border-zinc-900">
-        <div>
-          <p className="text-xs font-black text-emerald-500 tracking-widest uppercase">Flash</p>
-          <p className="text-[11px] text-zinc-500">One pick. Act or swipe.</p>
-        </div>
-        <button
-          onClick={onClose}
-          className="w-9 h-9 rounded-full bg-zinc-900 ring-1 ring-zinc-800 text-zinc-400 flex items-center justify-center active:scale-90 transition-transform touch-manipulation"
-          style={{ WebkitTapHighlightColor: 'transparent' }}
-          aria-label="Close Flash"
-        >
-          ✕
-        </button>
-      </div>
+      <div className="flex-1 flex flex-col items-center justify-center relative px-2 flash-perspective">
+        {incoming && (
+          <div
+            className="absolute mx-6 w-[calc(100%-3rem)] max-w-md rounded-3xl glass-panel p-6 opacity-30"
+            style={{
+              transform: dragX < 0 ? 'translate3d(120%, 0, -40px)' : 'translate3d(-120%, 0, -40px)',
+              transition: 'transform 180ms cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+          />
+        )}
 
-      {/* Card area */}
-      <div className="flex-1 flex flex-col items-center justify-center overflow-hidden pb-24">
-        {current ? (
-          <div className="w-full max-w-sm">
-            <FlashCard
-              result={current}
-              onRight={handleRight}
-              onLeft={handleLeft}
-              entering={enterDir as ('from-right' | 'from-left') ?? undefined}
-              exiting={exitDir as ('to-right' | 'to-left') ?? undefined}
-            />
+        {card && (
+          <div
+            className="relative mx-6 w-[calc(100%-3rem)] max-w-md"
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+          >
+            <div
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-3xl text-obsidian-muted pointer-events-none z-10"
+              style={{ opacity: leftOpacity }}
+            >
+              ✕
+            </div>
+            <div
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-3xl text-emerald-400 pointer-events-none z-10"
+              style={{ opacity: rightOpacity }}
+            >
+              ♥
+            </div>
+
+            <div
+              className="rounded-3xl glass-panel p-6 touch-manipulation flash-card-3d"
+              style={{
+                transform: cardTransform,
+                transition: animating
+                  ? 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)'
+                  : 'none',
+              }}
+            >
+              <p className="type-meta text-emerald-400/90 mb-3">⚡ Flash</p>
+              <h2 className="type-display text-[26px] leading-tight mb-2">{card.name}</h2>
+              <p className="text-sm text-obsidian-muted italic leading-snug mb-3">
+                {card.contextReason}
+              </p>
+              <span className="inline-block text-[11px] font-semibold text-obsidian-muted glass-panel px-3 py-1 rounded-full mb-3">
+                {card.distanceLabel}
+              </span>
+              <p className="text-[13px] text-obsidian-soft leading-snug mb-4">
+                {card.vibeOrDescription}
+              </p>
+
+              <div className="border-t border-glass pt-4 space-y-3">
+                <button
+                  type="button"
+                  onClick={handlePrimary}
+                  className="w-full h-[52px] bg-emerald-500 text-obsidian font-bold rounded-xl active:scale-[0.97] touch-manipulation flash-fab-glow"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  {card.primaryActionLabel}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => completeSwipe('left')}
+                  className="w-full h-11 border-glass glass-panel text-obsidian-soft font-semibold rounded-xl active:opacity-80 touch-manipulation text-sm"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  Swipe for another →
+                </button>
+
+                <CoinFlip
+                  venueName={card.name}
+                  venueId={card.id}
+                  primaryActionLabel={card.primaryActionLabel}
+                  onPrimaryAction={handlePrimary}
+                  onSwipeNext={() => completeSwipe('left')}
+                  flipCount={coinFlips}
+                  maxFlips={3}
+                  onFlipComplete={() => setCoinFlips((c) => c + 1)}
+                />
+              </div>
+            </div>
           </div>
-        ) : (
-          <div className="text-center px-8">
-            <p className="text-5xl mb-4">🏁</p>
-            <p className="text-zinc-300 font-bold">You've seen everything.</p>
-            <p className="text-zinc-600 text-sm mt-1">Come back later for fresh picks.</p>
-          </div>
+        )}
+
+        {!card && (
+          <p className="text-obsidian-muted text-sm px-6 text-center">
+            No more picks right now — check back later.
+          </p>
         )}
       </div>
 
-      {/* Bottom swipe buttons */}
-      <div className="flex-shrink-0 flex items-center justify-center gap-8 pb-safe pb-8">
+      <div className="flex justify-center gap-12 pb-10 safe-bottom">
         <button
-          onClick={handleLeft}
-          className="w-14 h-14 rounded-full bg-zinc-800 ring-1 ring-zinc-700 flex items-center justify-center active:scale-90 transition-transform touch-manipulation text-xl"
+          type="button"
+          onClick={() => completeSwipe('left')}
+          className="w-14 h-14 rounded-full glass-panel flex items-center justify-center text-xl text-obsidian-muted active:opacity-80 touch-manipulation"
           style={{ WebkitTapHighlightColor: 'transparent' }}
-          aria-label="Skip"
+          aria-label="Pass"
         >
-          <span className="text-zinc-400">✕</span>
+          ✕
         </button>
         <button
-          onClick={handleRight}
-          className="w-14 h-14 rounded-full flex items-center justify-center active:scale-90 transition-transform touch-manipulation text-xl ring-1 ring-emerald-500/40"
-          style={{
-            backgroundColor: 'rgba(16,185,129,0.1)',
-            WebkitTapHighlightColor: 'transparent',
-          }}
-          aria-label="I'm in"
+          type="button"
+          onClick={() => completeSwipe('right')}
+          className="w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/35 flex items-center justify-center text-xl text-emerald-400 active:opacity-80 touch-manipulation"
+          style={{ WebkitTapHighlightColor: 'transparent' }}
+          aria-label="Save"
         >
-          <span className="text-emerald-400">♥</span>
+          ♥
         </button>
       </div>
 
-      {/* Trained toast */}
-      {showToast && <TrainedToast onDone={() => setShowToast(false)} />}
+      {showToast && (
+        <div className="absolute bottom-24 left-4 right-4 mx-auto max-w-md glass-panel text-obsidian-soft text-sm font-medium text-center py-3 px-4 rounded-xl animate-[fadeUp_0.28s_cubic-bezier(0.16,1,0.3,1)]">
+          Your Flash picks just got smarter ✓
+        </div>
+      )}
     </div>
   );
 }
