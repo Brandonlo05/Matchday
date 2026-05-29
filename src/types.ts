@@ -4,6 +4,11 @@
 
 export type CityId = 'la' | 'cdmx' | 'toronto' | 'ny';
 
+/** Alias used by Phase 2 hooks (Flash, swipe, historical pulse). */
+export type CityKey = CityId;
+
+export type AgeTier = 'family' | 'adult' | 'open';
+
 export type MatchPhase =
   | 'group'
   | 'round_of_32'
@@ -171,7 +176,103 @@ export interface CityData {
   matches: Match[];
   pubs: Pub[];
   stadiums: Stadium[];
+  freeActivities: FreeActivity[];
 }
+
+// ─── FREE ACTIVITIES (Phase 2) ───────────────────────────────
+
+export type FreeActivityCategory =
+  | 'park'
+  | 'trail'
+  | 'landmark'
+  | 'event'
+  | 'market'
+  | 'viewpoint';
+
+export interface FreeActivity {
+  id: string;
+  name: string;
+  category: FreeActivityCategory;
+  distance: string;
+  description: string;
+  tip: string;
+  isFamilyFriendly: boolean;
+  minAge: number;
+  mapsQuery: string;
+}
+
+// ─── FLASH & SWIPE (Phase 2) ─────────────────────────────────
+
+export type FlashItemType = 'pub' | 'activity';
+
+export interface FlashResult {
+  id: string;
+  name: string;
+  type: FlashItemType;
+  category: string;
+  distanceLabel: string;
+  contextReason: string;
+  primaryActionLabel: string;
+  primaryActionUrl: string;
+  vibeOrDescription: string;
+  /** Present when type is 'pub' — used for order-ahead modal. */
+  pubId?: string;
+}
+
+export interface SwipeRecord {
+  id: string;
+  direction: 'left' | 'right';
+  type: FlashItemType;
+  cityKey: CityKey;
+  timestamp: string;
+}
+
+export interface SavedPlace {
+  id: string;
+  name: string;
+  type: FlashItemType;
+  cityKey: CityKey;
+  savedAt: string;
+}
+
+// ─── DAY PLANNER (Phase 2) ───────────────────────────────────
+
+export interface PlanSlot {
+  id: string;
+  timeLabel: string;
+  timeEmoji: string;
+  name: string;
+  type: FlashItemType;
+  description: string;
+  actionLabel: string;
+  actionUrl: string;
+  swappable: boolean;
+}
+
+export interface DayPlan {
+  cityName: string;
+  date: string;
+  slots: PlanSlot[];
+}
+
+// ─── HISTORICAL PULSE (Phase 2) ──────────────────────────────
+
+export interface HistoricalPin {
+  id: string;
+  cityKey: CityKey;
+  lat: number;
+  lng: number;
+  title: string;
+  body: string;
+  era: string;
+  minAge: number;
+}
+
+// ─── ROOT NAVIGATION ─────────────────────────────────────────
+
+export type RootNavTab = 'home' | 'matchday';
+
+export type MatchdaySubTab = 'watch' | 'schedule' | 'transit';
 
 // ─── UI STATE ────────────────────────────────────────────────
 

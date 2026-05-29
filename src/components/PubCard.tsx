@@ -4,6 +4,7 @@
 // feature tags, live geo distance, and deposit micro-detail.
 // ============================================================
 
+import { useAgeTierContext } from '../context/AgeTierContext';
 import type { Pub } from '../types';
 
 // ─── Feature meta map ────────────────────────────────────────
@@ -58,6 +59,17 @@ interface Props {
 
 // ─── Live open dot ───────────────────────────────────────────
 
+const FAMILY_SUPPRESS_WORDS = ['bar', 'cocktail', 'brewery', 'pint', 'nightlife'];
+
+function pubVibeText(pub: Pub): string {
+  return `${pub.tagline} ${pub.features.join(' ')}`.toLowerCase();
+}
+
+function isFamilySuppressedVenue(pub: Pub): boolean {
+  const vibe = pubVibeText(pub);
+  return FAMILY_SUPPRESS_WORDS.some((w) => vibe.includes(w));
+}
+
 function LiveOpenDot() {
   return (
     <span className="flex items-center gap-1.5">
@@ -66,6 +78,14 @@ function LiveOpenDot() {
         <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
       </span>
       <span className="text-[10px] font-bold text-emerald-400 tracking-wider">OPEN NOW</span>
+    </span>
+  );
+}
+
+function VenueBadge() {
+  return (
+    <span className="text-[10px] font-bold text-zinc-500 tracking-wider uppercase ring-1 ring-zinc-700 px-2 py-0.5 rounded-full">
+      VENUE
     </span>
   );
 }
@@ -120,9 +140,12 @@ function Stars({ rating }: { rating: number }) {
 // ─── Main card ───────────────────────────────────────────────
 
 export function PubCard({ pub, activeFilters, onOrderAhead }: Props) {
+  const { ageTier } = useAgeTierContext();
   const open = isOpenNow();
   const hasActiveFilter = activeFilters.some((f) => pub.features.includes(f as any));
   const highlighted = activeFilters.length === 0 || hasActiveFilter;
+  const showVenueBadge =
+    ageTier === 'family' && isFamilySuppressedVenue(pub);
 
   return (
     <div
@@ -154,7 +177,7 @@ export function PubCard({ pub, activeFilters, onOrderAhead }: Props) {
               ORDER AHEAD ↗
             </span>
           )}
-          {open && <LiveOpenDot />}
+          {open && (showVenueBadge ? <VenueBadge /> : <LiveOpenDot />)}
         </div>
       </div>
 
