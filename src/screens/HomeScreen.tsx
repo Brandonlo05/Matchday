@@ -4,6 +4,10 @@ import { EditorialCityHeader } from '../components/layout/EditorialCityHeader';
 import { GlassPanel } from '../components/layout/GlassPanel';
 import { FreeActivitiesSection } from '../components/FreeActivitiesSection';
 import { PubsSection } from '../components/PubsSection';
+import { CulinaryDirectory } from '../components/modules/CulinaryDirectory';
+import { TransitHub } from '../components/modules/TransitHub';
+import { LiveSportsCenter } from '../components/modules/LiveSportsCenter';
+import { ParksTrailsDirectory } from '../components/modules/ParksTrailsDirectory';
 import type { CityData, GeoState, Pub } from '../types';
 
 interface HomeScreenProps {
@@ -67,6 +71,18 @@ export function HomeScreen({
       </section>
 
       <FreeActivitiesSection activities={selectedCity.freeActivities} />
+
+      {/* City Intelligence · Little Rock */}
+      <div className="mt-8">
+        <div className="px-5 mb-4">
+          <p className="type-meta">City Intelligence</p>
+          <h2 className="type-display text-lg mt-1">Little Rock</h2>
+        </div>
+        <CulinaryDirectory />
+        <TransitHub />
+        <LiveSportsCenter />
+        <ParksTrailsDirectory />
+      </div>
 
       <div className="mt-2">
         <div className="px-5 mb-3">

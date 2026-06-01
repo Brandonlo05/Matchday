@@ -4,8 +4,10 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { AgeTierProvider, useAgeTierContext } from './context/AgeTierContext';
+import { AIProfileProvider, useAIProfile } from './context/AIUserContext';
 import { useMatchdayEngine } from './hooks/useMatchdayEngine';
 import { useHistoricalPulse } from './hooks/useHistoricalPulse';
+import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 
 import { AgeTierGate } from './components/AgeTierGate';
 import { OrderAheadModal } from './components/OrderAheadModal';
@@ -40,6 +42,7 @@ function cityMatchCount(city: CityData): number {
 
 function MatchdayApp() {
   const { hasSelected } = useAgeTierContext();
+  const { profile } = useAIProfile();
   const {
     cities,
     selectedCityId,
@@ -112,6 +115,10 @@ function MatchdayApp() {
 
   if (!hasSelected) {
     return <AgeTierGate />;
+  }
+
+  if (!profile.onboardingComplete) {
+    return <OnboardingWizard onComplete={() => {}} />;
   }
 
   return (
@@ -202,8 +209,10 @@ function MatchdayApp() {
 
 export default function App() {
   return (
-    <AgeTierProvider>
-      <MatchdayApp />
-    </AgeTierProvider>
+    <AIProfileProvider>
+      <AgeTierProvider>
+        <MatchdayApp />
+      </AgeTierProvider>
+    </AIProfileProvider>
   );
 }
