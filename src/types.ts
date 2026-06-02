@@ -160,7 +160,7 @@ export interface GeoState {
   status: 'idle' | 'requesting' | 'granted' | 'denied' | 'unsupported';
   lat?: number;
   lng?: number;
-  closestCityId?: CityId;
+  closestCityId?: string;
   error?: string;
 }
 

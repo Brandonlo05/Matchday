@@ -753,10 +753,22 @@ const FREE_NY: FreeActivity[] = [
 
 const CITY_CENTERS: Record<CityId, { lat: number; lng: number }> = {
   la:      { lat: 34.0522,  lng: -118.2437 },
-  cdmx:   { lat: 19.4326,  lng: -99.1332  },
+  cdmx:    { lat: 19.4326,  lng: -99.1332  },
   toronto: { lat: 43.6532,  lng: -79.3832  },
   ny:      { lat: 40.7128,  lng: -74.0060  },
 };
+
+// Extended centers include non-World-Cup cities that have city intelligence
+// data. Used only for GPS nearest-city detection; does not affect the World
+// Cup city selector or CITIES array.
+const EXTENDED_CITY_CENTERS: Record<string, { lat: number; lng: number }> = {
+  ...CITY_CENTERS,
+  'little-rock': { lat: 34.7465, lng: -92.2896 },
+};
+
+function isCityId(key: string): key is CityId {
+  return key === 'la' || key === 'cdmx' || key === 'toronto' || key === 'ny';
+}
 
 export const CITIES: CityData[] = [
   {
@@ -862,15 +874,19 @@ export function useMatchdayEngine(): MatchdayEngineReturn {
     setGeo({ status: 'requesting' });
     navigator.geolocation.getCurrentPosition(
       ({ coords: { latitude: lat, longitude: lng } }) => {
-        let closestId: CityId = 'la';
+        let closestKey = 'la';
         let minDist = Infinity;
-        for (const [cityId, center] of Object.entries(CITY_CENTERS) as [CityId, { lat: number; lng: number }][]) {
+        for (const [key, center] of Object.entries(EXTENDED_CITY_CENTERS)) {
           const d = haversineKm(lat, lng, center.lat, center.lng);
-          if (d < minDist) { minDist = d; closestId = cityId; }
+          if (d < minDist) { minDist = d; closestKey = key; }
         }
-        setGeo({ status: 'granted', lat, lng, closestCityId: closestId });
-        setSelectedCityId(closestId);
-        localStorage.setItem(LS_CITY_KEY, closestId);
+        setGeo({ status: 'granted', lat, lng, closestCityId: closestKey });
+        // Only update World Cup city selector for known CityId values.
+        // Extended keys (e.g. 'little-rock') are resolved by cityDataRouter.
+        if (isCityId(closestKey)) {
+          setSelectedCityId(closestKey);
+          localStorage.setItem(LS_CITY_KEY, closestKey);
+        }
       },
       (err) => setGeo({ status: 'denied', error: err.message }),
       { timeout: 8000, maximumAge: 300_000 }

@@ -1,10 +1,10 @@
 // ============================================================
-// MatchDay — Parks & Trails Directory (Little Rock)
-// Two pill tabs with exact trail captions and Maps deep links
+// MatchDay — Parks & Trails Directory
+// Two pill tabs with trail captions and Maps deep links
 // ============================================================
 
 import { useState } from 'react';
-import { littleRockData } from '../../data/littleRockData';
+import { getNearestAvailableCity } from '../../data/cityDataRouter';
 import type { LRTrail } from '../../data/littleRockData';
 
 // ─── TYPES ───────────────────────────────────────────────────
@@ -12,6 +12,18 @@ import type { LRTrail } from '../../data/littleRockData';
 type TrailTab = LRTrail['tab'];
 
 const TABS: TrailTab[] = ['Top Trails', 'Best Trails for Views'];
+
+// ─── NEAREST CITY BANNER ─────────────────────────────────────
+
+function NearestCityBanner() {
+  return (
+    <div className="mx-4 mb-3 px-3 py-2 rounded-xl bg-amber-500/10 ring-1 ring-amber-500/20">
+      <p className="text-[11px] text-amber-400 font-medium">
+        Showing nearest available city · More cities coming soon
+      </p>
+    </div>
+  );
+}
 
 // ─── TRAIL CARD ──────────────────────────────────────────────
 
@@ -45,51 +57,58 @@ function TrailCard({ trail }: TrailCardProps) {
 
 // ─── PARKS & TRAILS DIRECTORY ─────────────────────────────────
 
-export function ParksTrailsDirectory() {
+interface ParksTrailsDirectoryProps {
+  cityKey: string;
+}
+
+export function ParksTrailsDirectory({ cityKey }: ParksTrailsDirectoryProps) {
+  const { data, isExact } = getNearestAvailableCity(cityKey);
   const [activeTab, setActiveTab] = useState<TrailTab>('Top Trails');
 
-  const filteredTrails = littleRockData.trails.filter(
-    (t) => t.tab === activeTab,
-  );
+  const filteredTrails = data.trails.filter((t) => t.tab === activeTab);
 
   return (
-    <section className="px-4 pb-6">
-      <div className="mb-4">
+    <section className="pb-6">
+      {!isExact && <NearestCityBanner />}
+
+      <div className="px-4 mb-4">
         <p className="type-meta text-emerald-400/90">Outside</p>
         <h2 className="type-display text-xl mt-1">Parks &amp; Trails</h2>
       </div>
 
-      {/* ── Pill tabs ──────────────────────────────────────── */}
-      <div className="flex gap-2 mb-4">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={[
-              'flex-1 h-[44px] rounded-full text-xs font-bold transition-all duration-150 touch-manipulation px-2',
-              activeTab === tab
-                ? 'bg-emerald-500 text-zinc-950'
-                : 'glass-panel text-zinc-400',
-            ].join(' ')}
-            style={{ WebkitTapHighlightColor: 'transparent' }}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
+      <div className="px-4">
+        {/* ── Pill tabs ──────────────────────────────────────── */}
+        <div className="flex gap-2 mb-4">
+          {TABS.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={[
+                'flex-1 h-[44px] rounded-full text-xs font-bold transition-all duration-150 touch-manipulation px-2',
+                activeTab === tab
+                  ? 'bg-emerald-500 text-zinc-950'
+                  : 'glass-panel text-zinc-400',
+              ].join(' ')}
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
 
-      {/* ── Trail cards ───────────────────────────────────── */}
-      <div className="space-y-3">
-        {filteredTrails.length > 0 ? (
-          filteredTrails.map((trail) => (
-            <TrailCard key={trail.id} trail={trail} />
-          ))
-        ) : (
-          <p className="text-sm text-zinc-500 text-center py-10">
-            No trails in this category.
-          </p>
-        )}
+        {/* ── Trail cards ───────────────────────────────────── */}
+        <div className="space-y-3">
+          {filteredTrails.length > 0 ? (
+            filteredTrails.map((trail) => (
+              <TrailCard key={trail.id} trail={trail} />
+            ))
+          ) : (
+            <p className="text-sm text-zinc-500 text-center py-10">
+              No trails in this category.
+            </p>
+          )}
+        </div>
       </div>
     </section>
   );
