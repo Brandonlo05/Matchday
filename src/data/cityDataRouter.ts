@@ -5,6 +5,8 @@
 // ============================================================
 
 import { littleRockData } from './littleRockData';
+import type { ProfileMatchTag } from './littleRockData';
+import { nashvilleData } from './nashvilleData';
 
 // ─── SUPPORTED CITY KEYS ─────────────────────────────────────
 
@@ -25,12 +27,49 @@ export type SupportedCityKey =
   | 'seattle'
   | 'boston';
 
+// ─── MINIMUM STRUCTURAL INTERFACE ────────────────────────────
+// Covers exactly the fields read by the four city intelligence modules.
+// Both littleRockData and nashvilleData are structural supertypes of this.
+
+export interface CityIntelligenceData {
+  restaurants: ReadonlyArray<{
+    id: string;
+    name: string;
+    description: string;
+    url: string;
+    profileMatchTags: ProfileMatchTag[];
+    historicalBadge: { active: boolean; copy: string | null };
+  }>;
+  transitOptions: ReadonlyArray<{
+    id: string;
+    name: string;
+    category: 'Flash Rapid Selection' | 'Free / Public Selection';
+    description: string;
+    fare: string;
+  }>;
+  sportsTeams: ReadonlyArray<{
+    id: string;
+    name: string;
+    description: string;
+    venue: string;
+    ticketUrl: string | null;
+    showLiveScore: boolean;
+  }>;
+  trails: ReadonlyArray<{
+    id: string;
+    name: string;
+    tab: 'Top Trails' | 'Best Trails for Views';
+    caption: string;
+    mapsQuery: string;
+  }>;
+}
+
 // ─── CITY DATA MAP ───────────────────────────────────────────
 // Add new city data files here once Gemini research is complete.
 
-const cityDataMap: Partial<Record<SupportedCityKey, typeof littleRockData>> = {
+const cityDataMap: Partial<Record<SupportedCityKey, CityIntelligenceData>> = {
   'little-rock': littleRockData,
-  // 'nashville': nashvilleData,
+  'nashville':   nashvilleData,
   // 'miami':     miamiData,
 };
 
@@ -39,9 +78,7 @@ const cityDataMap: Partial<Record<SupportedCityKey, typeof littleRockData>> = {
 /**
  * Returns the city data for an exact key match, or null if unsupported.
  */
-export function getCityData(
-  cityKey: string,
-): typeof littleRockData | null {
+export function getCityData(cityKey: string): CityIntelligenceData | null {
   const key = cityKey as SupportedCityKey;
   return cityDataMap[key] ?? null;
 }
@@ -51,7 +88,7 @@ export function getCityData(
  * available city if the key has no data yet. Always returns data.
  */
 export function getNearestAvailableCity(cityKey: string): {
-  data: typeof littleRockData;
+  data: CityIntelligenceData;
   resolvedKey: string;
   isExact: boolean;
 } {

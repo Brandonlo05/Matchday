@@ -78,7 +78,7 @@ function RestaurantCard({
               Heritage
             </p>
             <p className="text-sm text-amber-300/80 leading-relaxed">
-              {restaurant.historicalBadge.copy}
+              {restaurant.historicalBadge.copy ?? ''}
             </p>
           </div>
         )}

@@ -26,7 +26,7 @@ export interface LRRestaurant {
   profileMatchTags: ProfileMatchTag[];
   historicalBadge: {
     active: boolean;
-    copy: string;
+    copy: string | null;
   };
 }
 

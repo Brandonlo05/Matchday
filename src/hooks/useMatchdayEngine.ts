@@ -764,6 +764,7 @@ const CITY_CENTERS: Record<CityId, { lat: number; lng: number }> = {
 const EXTENDED_CITY_CENTERS: Record<string, { lat: number; lng: number }> = {
   ...CITY_CENTERS,
   'little-rock': { lat: 34.7465, lng: -92.2896 },
+  'nashville':   { lat: 36.1627, lng: -86.7816 },
 };
 
 function isCityId(key: string): key is CityId {
