@@ -39,6 +39,15 @@ export interface CityIntelligenceData {
     url: string;
     profileMatchTags: ProfileMatchTag[];
     historicalBadge: { active: boolean; copy: string | null };
+    /** Populated for cities with richer data (Nashville+). Used for live deal countdowns. */
+    deals?: {
+      hasLunchSpecial: boolean;
+      lunchHours: string | null;
+      hasHappyHour: boolean;
+      happyHourWindow: string | null;
+    };
+    /** Day-of-week hours map. Keys are lowercase day names. "Closed" means closed. */
+    hours?: Record<string, string>;
   }>;
   transitOptions: ReadonlyArray<{
     id: string;
@@ -46,6 +55,8 @@ export interface CityIntelligenceData {
     category: 'Flash Rapid Selection' | 'Free / Public Selection';
     description: string;
     fare: string;
+    /** Human-readable frequency string, e.g. "Every 10-15 minutes" or "On-demand". */
+    frequency?: string;
   }>;
   sportsTeams: ReadonlyArray<{
     id: string;
@@ -61,6 +72,8 @@ export interface CityIntelligenceData {
     tab: 'Top Trails' | 'Best Trails for Views';
     caption: string;
     mapsQuery: string;
+    /** Named time bracket, e.g. "Sunrise", "Late Afternoon", "Sunset". */
+    bestTimeToVisit?: string;
   }>;
 }
 

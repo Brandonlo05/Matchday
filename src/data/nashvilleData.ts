@@ -7,6 +7,7 @@ import type { ProfileMatchTag } from './littleRockData';
 // ─── INTERFACES ───────────────────────────────────────────────
 
 export interface NashHours {
+  [key: string]: string; // allows assignment to Record<string, string>
   monday: string;
   tuesday: string;
   wednesday: string;

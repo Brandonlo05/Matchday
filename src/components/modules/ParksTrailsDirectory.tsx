@@ -1,17 +1,40 @@
 // ============================================================
 // MatchDay — Parks & Trails Directory
-// Two pill tabs with trail captions and Maps deep links
+// Two pill tabs, trail captions, Maps deep links, freshness badges
 // ============================================================
 
 import { useState } from 'react';
 import { getNearestAvailableCity } from '../../data/cityDataRouter';
-import type { LRTrail } from '../../data/littleRockData';
+import type { CityIntelligenceData } from '../../data/cityDataRouter';
 
-// ─── TYPES ───────────────────────────────────────────────────
+// ─── LOCAL TYPES ─────────────────────────────────────────────
 
-type TrailTab = LRTrail['tab'];
+type TrailData = CityIntelligenceData['trails'][number];
+type TrailTab  = TrailData['tab'];
 
 const TABS: TrailTab[] = ['Top Trails', 'Best Trails for Views'];
+
+// ─── TRAIL FRESHNESS HELPERS ─────────────────────────────────
+
+const TIME_BRACKETS: Array<{ label: string; startH: number; endH: number }> = [
+  { label: 'Sunrise',       startH: 5,  endH: 8  },
+  { label: 'Early Morning', startH: 5,  endH: 10 },
+  { label: 'Morning',       startH: 7,  endH: 11 },
+  { label: 'Midday',        startH: 11, endH: 14 },
+  { label: 'Late Afternoon', startH: 15, endH: 18 },
+  { label: 'Sunset',        startH: 18, endH: 20 },
+  { label: 'Evening',       startH: 19, endH: 22 },
+];
+
+function isPerfectNow(bestTimeToVisit: string | undefined, hour: number): boolean {
+  if (!bestTimeToVisit) return false;
+  return TIME_BRACKETS.some(
+    ({ label, startH, endH }) =>
+      hour >= startH &&
+      hour < endH &&
+      bestTimeToVisit.toLowerCase().includes(label.toLowerCase()),
+  );
+}
 
 // ─── NEAREST CITY BANNER ─────────────────────────────────────
 
@@ -28,17 +51,33 @@ function NearestCityBanner() {
 // ─── TRAIL CARD ──────────────────────────────────────────────
 
 interface TrailCardProps {
-  trail: LRTrail;
+  trail: TrailData;
+  currentHour: number;
 }
 
-function TrailCard({ trail }: TrailCardProps) {
+function TrailCard({ trail, currentHour }: TrailCardProps) {
   const directionsUrl = `https://maps.google.com/?q=${encodeURIComponent(
     trail.mapsQuery,
   )}`;
+  const perfect = isPerfectNow(trail.bestTimeToVisit, currentHour);
 
   return (
     <article className="rounded-2xl bg-zinc-900 ring-1 ring-zinc-800 p-4">
-      <h3 className="font-bold text-zinc-50 text-base mb-2">{trail.name}</h3>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <h3 className="font-bold text-zinc-50 text-base">{trail.name}</h3>
+        {/* Freshness indicator */}
+        {trail.bestTimeToVisit && (
+          perfect ? (
+            <span className="flex-shrink-0 text-[10px] font-bold text-emerald-400 whitespace-nowrap">
+              ✓ Perfect right now
+            </span>
+          ) : (
+            <span className="flex-shrink-0 text-[10px] text-zinc-500 whitespace-nowrap">
+              {trail.bestTimeToVisit}
+            </span>
+          )
+        )}
+      </div>
       <p className="text-sm text-zinc-400 leading-relaxed mb-4 italic">
         {trail.caption}
       </p>
@@ -64,6 +103,7 @@ interface ParksTrailsDirectoryProps {
 export function ParksTrailsDirectory({ cityKey }: ParksTrailsDirectoryProps) {
   const { data, isExact } = getNearestAvailableCity(cityKey);
   const [activeTab, setActiveTab] = useState<TrailTab>('Top Trails');
+  const currentHour = new Date().getHours();
 
   const filteredTrails = data.trails.filter((t) => t.tab === activeTab);
 
@@ -101,7 +141,7 @@ export function ParksTrailsDirectory({ cityKey }: ParksTrailsDirectoryProps) {
         <div className="space-y-3">
           {filteredTrails.length > 0 ? (
             filteredTrails.map((trail) => (
-              <TrailCard key={trail.id} trail={trail} />
+              <TrailCard key={trail.id} trail={trail} currentHour={currentHour} />
             ))
           ) : (
             <p className="text-sm text-zinc-500 text-center py-10">

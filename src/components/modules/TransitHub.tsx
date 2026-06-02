@@ -1,39 +1,67 @@
 // ============================================================
 // MatchDay — Transit Hub
-// Pill-toggled transit options + client-side Maps URL parser
+// Pill-toggled transit, live status badges, Maps URL parser
 // ============================================================
 
 import { useState, useCallback } from 'react';
 import { getNearestAvailableCity } from '../../data/cityDataRouter';
-import type { LRTransitOption } from '../../data/littleRockData';
+import type { CityIntelligenceData } from '../../data/cityDataRouter';
 
-// ─── TYPES ───────────────────────────────────────────────────
+// ─── LOCAL TYPES ─────────────────────────────────────────────
 
-type TransitTab = LRTransitOption['category'];
+type TransitOptionData = CityIntelligenceData['transitOptions'][number];
+type TransitTab        = TransitOptionData['category'];
 
-type ParseResult =
-  | { status: 'idle' }
-  | { status: 'found'; location: string }
-  | { status: 'failed' };
+const TABS: TransitTab[] = ['Flash Rapid Selection', 'Free / Public Selection'];
+
+// ─── LIVE STATUS HELPER ───────────────────────────────────────
+
+interface TransitStatus {
+  label: string;
+  pulse: boolean;
+}
+
+function getTransitStatus(option: TransitOptionData): TransitStatus {
+  const name = option.name.toLowerCase();
+  const freq = option.frequency?.toLowerCase() ?? '';
+
+  // Free services, named circuits, streetcars, and people-movers are always running
+  if (
+    option.fare === 'Free' ||
+    name.includes('circuit') ||
+    name.includes('streetcar') ||
+    name.includes('metromover') ||
+    name.includes('tram')
+  ) {
+    return { label: 'RUNNING NOW', pulse: true };
+  }
+
+  // On-demand services
+  if (freq.includes('on-demand') || freq.includes('on demand')) {
+    return { label: 'AVAILABLE NOW', pulse: false };
+  }
+
+  // Scheduled services — show frequency string
+  if (option.frequency) {
+    return { label: option.frequency, pulse: false };
+  }
+
+  return { label: '', pulse: false };
+}
 
 // ─── URL PARSER ───────────────────────────────────────────────
-// Checks ?q=, /place/, and address= in that priority order.
 
 function parseLocationFromUrl(rawUrl: string): string | null {
   try {
     const parsed = new URL(rawUrl.trim());
-
     const q = parsed.searchParams.get('q');
     if (q !== null) return decodeURIComponent(q);
-
     const placeMatch = /\/place\/([^/]+)/.exec(parsed.pathname);
     if (placeMatch !== null && placeMatch[1] !== undefined) {
       return decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
     }
-
     const address = parsed.searchParams.get('address');
     if (address !== null) return decodeURIComponent(address);
-
     return null;
   } catch {
     return null;
@@ -55,10 +83,12 @@ function NearestCityBanner() {
 // ─── TRANSIT CARD ────────────────────────────────────────────
 
 interface TransitCardProps {
-  option: LRTransitOption;
+  option: TransitOptionData;
 }
 
 function TransitCard({ option }: TransitCardProps) {
+  const status = getTransitStatus(option);
+
   return (
     <div className="rounded-2xl bg-zinc-900 ring-1 ring-zinc-800 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -67,6 +97,17 @@ function TransitCard({ option }: TransitCardProps) {
           <p className="text-sm text-zinc-400 mt-1 leading-snug">
             {option.description}
           </p>
+          {/* Live status badge */}
+          {status.label && (
+            <div className="flex items-center gap-1.5 mt-2">
+              {status.pulse && (
+                <span className="block w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+              )}
+              <span className="text-[10px] text-emerald-400 font-semibold">
+                {status.label}
+              </span>
+            </div>
+          )}
         </div>
         <span className="flex-shrink-0 text-xs font-bold text-emerald-400 bg-emerald-500/10 rounded-full px-3 py-1 min-h-[28px] flex items-center">
           {option.fare}
@@ -78,7 +119,10 @@ function TransitCard({ option }: TransitCardProps) {
 
 // ─── TRANSIT HUB ─────────────────────────────────────────────
 
-const TABS: TransitTab[] = ['Flash Rapid Selection', 'Free / Public Selection'];
+type ParseResult =
+  | { status: 'idle' }
+  | { status: 'found'; location: string }
+  | { status: 'failed' };
 
 interface TransitHubProps {
   cityKey: string;
@@ -95,16 +139,13 @@ export function TransitHub({ cityKey }: TransitHubProps) {
   );
 
   const handleParse = useCallback(() => {
-    if (!shareLink.trim()) {
-      setParseResult({ status: 'idle' });
-      return;
-    }
+    if (!shareLink.trim()) { setParseResult({ status: 'idle' }); return; }
     const location = parseLocationFromUrl(shareLink);
-    if (location !== null) {
-      setParseResult({ status: 'found', location });
-    } else {
-      setParseResult({ status: 'failed' });
-    }
+    setParseResult(
+      location !== null
+        ? { status: 'found', location }
+        : { status: 'failed' },
+    );
   }, [shareLink]);
 
   const handleKeyDown = useCallback(
@@ -163,7 +204,6 @@ export function TransitHub({ cityKey }: TransitHubProps) {
           <p className="text-sm text-zinc-500 mb-3 leading-snug">
             Paste a Google Maps or Apple Maps link to extract the location name.
           </p>
-
           <div className="flex gap-2 mb-3">
             <input
               type="url"
@@ -185,7 +225,6 @@ export function TransitHub({ cityKey }: TransitHubProps) {
               Parse
             </button>
           </div>
-
           {parseResult.status === 'found' && (
             <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-3 py-2.5">
               <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-0.5">
@@ -196,11 +235,9 @@ export function TransitHub({ cityKey }: TransitHubProps) {
               </p>
             </div>
           )}
-
           {parseResult.status === 'failed' && (
             <p className="text-xs text-amber-400 leading-snug">
-              Could not parse location — try a direct Google Maps or Apple Maps
-              share link.
+              Could not parse location — try a direct Google Maps or Apple Maps share link.
             </p>
           )}
         </div>

@@ -55,6 +55,18 @@ interface HomeScreenProps {
   onOpenPlanner: () => void;
 }
 
+// ─── TIME-AWARE GREETING ─────────────────────────────────────
+
+function getTimeGreeting(hour: number, cityName: string): string {
+  if (hour >= 5 && hour < 10)  return `Good morning · ${cityName} is waking up`;
+  if (hour >= 10 && hour < 12) return `Late morning · Best time for a walk in ${cityName}`;
+  if (hour >= 12 && hour < 14) return `Lunch window open · Deals active now`;
+  if (hour >= 14 && hour < 17) return `Afternoon in ${cityName} · Happy hours starting soon`;
+  if (hour >= 17 && hour < 20) return `Prime time · Happy hours live across ${cityName}`;
+  if (hour >= 20 && hour < 23) return `Evening mode · ${cityName} is fully alive right now`;
+  return `Late night · Only the real spots are open`;
+}
+
 // ─── HOME SCREEN ─────────────────────────────────────────────
 
 export function HomeScreen({
@@ -85,6 +97,11 @@ export function HomeScreen({
         onTryNewCity={onTryNewCity}
         onRequestGeo={onRequestGeo}
       />
+
+      {/* ── Time-aware greeting ─────────────────────────────── */}
+      <p className="text-[11px] text-emerald-400 font-semibold tracking-widest uppercase px-4 pb-1">
+        {getTimeGreeting(new Date().getHours(), selectedCity.displayName)}
+      </p>
 
       {/* ── Mood filter bar ────────────────────────────────── */}
       <div className="flex gap-2 overflow-x-auto scrollbar-none px-4 py-3">
